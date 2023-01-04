@@ -25,7 +25,7 @@ def train_stage_1(dataloader, epochs):
     decoder = model.Decoder(DIM_C)
     discriminator = model.Discriminator(DIM_C)
 
-    opt_encoder = torch.optim.Adam(model.Encoder.parameters(), lr=0.0001)
+    opt_encoder = torch.optim.Adam(encoder.parameters(), lr=0.0001)
     opt_decoder = torch.optim.Adam(decoder.parameters(), lr=0.0001)
     opt_discriminator = torch.optim.Adam(discriminator.parameters(), lr=0.0001)
 
@@ -42,7 +42,7 @@ def train_stage_1(dataloader, epochs):
 
             # (1)
             DATA_X = torch.movedim(X, 1, 2)  # Data : BATCH_SIZE X DIM_C X DIM_T
-            DATA_H = model.Encoder(DATA_X)  # Data Encoder : BATCH_SIZE X DIM_D X DIM_T2
+            DATA_H = encoder(DATA_X)  # Data Encoder : BATCH_SIZE X DIM_D X DIM_T2
             DATA_C = model.measure_similarity(
                 DATA_H, DATA_M
             )  # Matrice similarity : BATCH_SIZE * DIM_M * DIM_T2
@@ -166,7 +166,7 @@ DIM_H = [96, 192, 336, 720]  # Nombre de valeur à prédire pour une serie chron
 if __name__ == "__main__":
     # stage 1
     dataset1 = datasets.DatasetLd(
-        path="../data/LD2011_2014/LD2011_2014.pkl", DIM_T=DIM_T, DIM_H=DIM_H[0]
+        path="data/LD2011_2014/LD2011_2014.pkl", DIM_T=DIM_T, DIM_H=DIM_H[0]
     )
 
     dataloader1 = DataLoader(
