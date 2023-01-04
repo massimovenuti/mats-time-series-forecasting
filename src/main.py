@@ -72,25 +72,24 @@ def train_stage_1(dataloader, epochs):
             )  #  : BATCH_SIZE X DIM_D X DIM_T2
 
             if e % 2 == 0:
-                # (3)
-                loss_D = model.calcule_loss_d(DIM_N, DIM_T2, DATA_D, DATA_D_reconstruit)
-                loss_D.backward()
-                print("loss_D : ", loss_D)
-            else:
                 # (4)
                 loss = model.calcule_loss(
                     loss_REC, loss_M, DATA_D_reconstruit, DIM_N, DIM_T2, lambd, gamma
                 )
                 loss.backward()
+                opt_encoder.step()
+                opt_decoder.step()
                 print("loss : ", loss)
+            else:
+                # (3)
+                loss_D = model.calcule_loss_d(DIM_N, DIM_T2, DATA_D, DATA_D_reconstruit)
+                loss_D.backward()
+                print("loss_D : ", loss_D)
+                opt_discriminator.step()
 
             #             print('loss_REC : ',loss_REC)
             #             print('loss_M : ', loss_M)
             #             print('loss_D : ', loss_D)
-
-            opt_encoder.step()
-            opt_decoder.step()
-            opt_discriminator.step()
 
     return encoder, decoder, DATA_M
 
