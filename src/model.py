@@ -11,20 +11,20 @@ class Encoder(nn.Module):
                 in_channels=dim_in, out_channels=128, kernel_size=4, stride=2, padding=1
             ),
             nn.Tanh(),
-            nn.Dropout(p=0.1, inplace=True),
+            nn.Dropout(p=0.1),
             nn.Conv1d(
                 in_channels=128, out_channels=64, kernel_size=4, stride=2, padding=1
             ),
             nn.Tanh(),
-            nn.Dropout(p=0.1, inplace=True),
+            nn.Dropout(p=0.1),
             nn.Conv1d(
                 in_channels=64, out_channels=64, kernel_size=5, stride=3, padding=1
             ),
             nn.Tanh(),
         )
 
-    def forward(self, x):
-        return self.network(x)
+    def forward(self, X):
+        return self.network(X)
 
 
 class Decoder(nn.Module):
@@ -35,12 +35,12 @@ class Decoder(nn.Module):
                 in_channels=64, out_channels=64, kernel_size=5, stride=3, padding=1
             ),
             nn.Tanh(),
-            nn.Dropout(p=0.1, inplace=True),
+            nn.Dropout(p=0.1),
             nn.ConvTranspose1d(
                 in_channels=64, out_channels=128, kernel_size=4, stride=2, padding=1
             ),
             nn.Tanh(),
-            nn.Dropout(p=0.1, inplace=True),
+            nn.Dropout(p=0.1),
             nn.ConvTranspose1d(
                 in_channels=128,
                 out_channels=dim_out,
@@ -51,119 +51,108 @@ class Decoder(nn.Module):
             nn.Tanh(),
         )
 
-    def forward(self, x):
-        return self.network(x)
+    def forward(self, X):
+        return self.network(X)
 
 
 class Discriminator(nn.Module):
     def __init__(self, dim_in):
         super().__init__()
-        self.network = nn.Sequential(
-            nn.Conv1d(
-                in_channels=dim_in, out_channels=128, kernel_size=4, stride=2, padding=1
-            ),
-            nn.Tanh(),
-            nn.Dropout(p=0.1, inplace=True),
-            nn.Conv1d(
-                in_channels=128, out_channels=64, kernel_size=4, stride=2, padding=1
-            ),
-            nn.Tanh(),
-            nn.Dropout(p=0.1, inplace=True),
-            nn.Conv1d(
-                in_channels=64, out_channels=64, kernel_size=5, stride=3, padding=1
-            ),
-            nn.Tanh(),
-        )
-
+        self.backbone = Encoder(dim_in)
         self.fc = nn.Sequential(
             nn.Linear(in_features=64, out_features=64), nn.Sigmoid()
         )
 
-    def forward(self, x):
-        x = self.network(x)
-        x = torch.movedim(x, 1, 2)
-        x = self.fc(x)
-        x = torch.movedim(x, 1, 2)
-        x = np.where(x >= 0.5, 1.0, 0.0)
-        return torch.tensor(x, dtype=torch.float32)
+    def forward(self, X):
+        backbone_out = self.backbone(X)
+        backbone_out = backbone_out.transpose(1, 2)  # N * L * d
+        output = self.fc(backbone_out)
+        output = output.transpose(1, 2)  # N * d * L
+        return output
 
 
 class Predictor(nn.Module):
     def __init__(self, dim_in):
         super().__init__()
-        self.network = nn.Sequential(
-            torch.nn.LSTM(input_size=dim_in, hidden_size=128, num_layers=8, dropout=0.5)
+        self.network = nn.LSTM(
+            input_size=dim_in, hidden_size=128, num_layers=8, dropout=0.5
         )
 
     def forward(self, x):
         x, _ = self.network(x)
-        x = torch.nn.Softmax()(x)
+        x = torch.nn.Softmax()(x)  # TODO : utiliser torch.softmax
         return torch.tensor(x, dtype=torch.float32)
 
 
-def measure_similarity(H, M):
-    H = H.detach().numpy()
-    M = M.detach().numpy()
+class MemoryBank(nn.Module):
+    def __init__(self, size, dim) -> None:
+        super().__init__()
+        units = torch.zeros((dim, size))
+        nn.init.uniform_(units)
+        self.units = nn.Parameter(units)
 
-    tmp = np.exp(
-        -1
-        * (
-            -2 * (M.T @ H)
-            + np.sum(M**2, axis=0)[:, np.newaxis]
-            + np.sum(H**2, axis=1)[:, np.newaxis]
+    def forward(self, H):
+        """
+        Measures similarity for each h in H with each m in M.
+        """
+        numerator = torch.stack(
+            [
+                torch.exp(
+                    -torch.linalg.norm(H.transpose(1, 2) - m, dim=2) ** 2
+                )  # TODO : norm 1 ?
+                for m in self.units.T
+            ],
+            dim=2,
         )
-    )
-    sum_tmp = np.sum(tmp, axis=0)
-    C = tmp / sum_tmp
-    C = np.where(C.T == np.max(C.T, axis=0), 1.0, 0.0).T
-    return torch.tensor(C, dtype=torch.float32)  # DIM_M * DIM_T2
+        denominator = torch.sum(numerator, dim=1).unsqueeze(1)
+        C = torch.transpose(numerator / denominator, 1, 2)
+        return C
+
+    def reconstruct(self, C):
+        return self.units @ C
 
 
-def calcule_loss_reconstruction(DIM_N, DIM_T, DIM_C, X, X_reconstruit):
-    loss = (1 / (DIM_N * DIM_T * DIM_C)) * torch.sum(
-        torch.pow(X_reconstruit - X, 2)
-    )  # cout loss reconstruction
-    return (
-        loss.clone().detach().requires_grad_(True)
-    )  # torch.tensor(loss,requires_grad=True)
+class DiscriminatorLoss(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, Dhat, D):
+        max_D = torch.maximum(torch.zeros_like(D), 1 - D)
+        max_Dhat = torch.maximum(torch.zeros_like(Dhat), 1 + Dhat)
+        loss = torch.mean(max_D + max_Dhat)
+        return loss
 
 
-def calcule_loss_m(DIM_N, DIM_T2, DIM_D, X, H, M):
-    H2 = H.clone().detach()  # avec stop gradient
-    H2.requires_grad = False
-    Z = np.argmin(H.detach().numpy() - M.detach().numpy(), axis=1)
-    Z2 = np.argmin(H2 - M, axis=1)  # avec stop gradient
-    Z2.requires_grad = False
-    loss = (1 / (DIM_N * DIM_T2 * DIM_D)) * torch.sum(
-        torch.sum(torch.pow(H2 - Z, 2) + torch.pow(H - Z2, 2))
-    )
-    return (
-        loss.clone().detach().requires_grad_(True)
-    )  # torch.tensor(loss,requires_grad=True)
+class EDMLoss(nn.Module):
+    def __init__(self, memory_coef, dhat_coef) -> None:
+        super().__init__()
+        # self.reconstruction_loss = nn.MSELoss() # ?
+        self.memory_coef = memory_coef
+        self.dhat_coef = dhat_coef
 
+    def reconstruction_loss(self, Xhat, X):
+        loss = torch.linalg.norm(Xhat - X, dim=(1, 2)).pow(2).mean()
+        return loss
 
-def calcule_loss_d(DIM_N, DIM_T2, DATA_D, DATA_D_reconstruit):
-    torch_zero = torch.zeros_like(DATA_D)
-    loss = (1 / (DIM_N * DIM_T2)) * torch.sum(
-        torch.sum(
-            torch.maximum(torch_zero, 1 - DATA_D)
-            + torch.maximum(torch_zero, 1 + DATA_D_reconstruit)
+    def memory_loss(self, H, M):
+        norms = torch.stack(
+            [torch.linalg.norm(H.transpose(1, 2) - m, dim=2) for m in M.T],
+            dim=2,
         )
-    )
-    return (
-        loss.clone().detach().requires_grad_(True)
-    )  # torch.tensor(loss,requires_grad=True)
+        Z = M.T[torch.argmin(norms, dim=2)].transpose(1, 2)
+        sums = (
+            torch.linalg.norm(H.detach() - Z, dim=1) ** 2
+            + torch.linalg.norm(H - Z.detach(), dim=1) ** 2
+        )
+        loss = sums.mean()
+        return loss
 
-
-def calcule_loss(loss_REC, loss_M, DATA_D_reconstruit, DIM_N, DIM_T2, lambd, gamma):
-    loss = (
-        loss_REC
-        + lambd * loss_M
-        - (gamma / (DIM_N * DIM_T2)) * torch.sum(DATA_D_reconstruit)
-    )
-    return (
-        loss.clone().detach().requires_grad_(True)
-    )  # torch.tensor(loss,requires_grad=True)
+    def forward(self, Xhat, X, H, M, Dhat):
+        return (
+            self.reconstruction_loss(Xhat, X)
+            + self.memory_coef * self.memory_loss(H, M)
+            - self.dhat_coef * Dhat.mean()
+        )
 
 
 def calcule_loss_pred(DIM_T2, DIM_HH, DATA_C_reconstruit, DATA_CC):
