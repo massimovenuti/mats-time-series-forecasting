@@ -24,10 +24,41 @@ def train_val_test_split(data, train_proportion, val_proportion, normalize):
     return data_train, data_val, data_test
 
 
+
+def data_to_hour(df,begin=4*24*365,frequency=4) :
+    out = []
+    data = df.to_numpy()
+    n = len(data)
+
+    for i in range(begin,n,frequency) :
+        date = data[i,0].split(':')[0]
+        data_houre = data[i:i+frequency,1:].mean(axis=0)
+        out.append( [date] + list(data_houre) ) 
+
+    return pd.DataFrame(out)
+
+def data_filter_client(df,number_client=320):
+    set_index_client = {0}
+    index = 0
+
+    while len(set_index_client) < number_client :
+        
+        for i,value in enumerate(df.iloc[index,1:]) :
+            if value != 0:
+                set_index_client.add(i+1)
+        index += 1
+        
+    return df.iloc[:,list(set_index_client)]
+
+
+
+
 def load_ld_dataset(
     path, train_proportion=0.7, val_proportion=0.1, normalize=True, dim_t=192, dim_h=96
 ):
     data = pd.read_csv(path, decimal=",", sep=";")
+    data = data_to_hour(data)
+    data = data_filter_client(data)
     data = data.drop(columns=data.columns[0], axis=1)
 
     data_train, data_val, data_test = train_val_test_split(
