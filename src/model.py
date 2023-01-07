@@ -48,7 +48,6 @@ class Decoder(nn.Module):
                 stride=2,
                 padding=1,
             ),
-            nn.Tanh(),
         )
 
     def forward(self, X):

@@ -42,20 +42,24 @@ def train_stage_1(
             D = discriminator(X)  # BATCH_SIZE X DIM_D X DIM_T2
             Dhat = discriminator(Xhat)  #  BATCH_SIZE X DIM_D X DIM_T2
 
-            # ? : freeze ok ?
             if e % 2 == 0:
                 # (4)
-                # rq : .detach() peut ne pas être obligatoire ?
-                loss = criterion_edm(Xhat, X, H, memory_bank.units, Dhat.detach())
+                loss = criterion_edm(Xhat, X, H, memory_bank.units, Dhat)
                 loss.backward()
                 optim_edm.step()
-                print("loss_edm : ", loss)  # TODO : use tensorboard
             else:
                 # (3)
                 loss = criterion_discriminator(Dhat, D)
                 loss.backward()
                 optim_discriminator.step()
-                print("loss_d : ", loss)  # TODO : use tensorboard
+
+            # TODO : use tensorboard
+            if e % 20 == 0 or e % 20 == 1:
+                print(
+                    f"[{epoch}/{epochs}][{e}/{len(dataloader)}]\t"
+                    f"{'EDM' if e%2 == 0 else 'D'}\t"
+                    f"Loss : {loss:.2f}"
+                )
 
 
 # def train_stage_2(encoder, decoder, DATA_M, dataloader, epochs):
@@ -121,33 +125,31 @@ def train_stage_1(
 #     return predictor
 
 
-# BATCH_SIZE = 64
-BATCH_SIZE = 99  # Just for tests to distinguish
+BATCH_SIZE = 64
+# BATCH_SIZE = 99  # Just for tests to distinguish
 DIM_T = 192  # Longeur d'une serie chronologique stage 1
 DIM_TT = 96  # Longeur d'une serie chronologique stage 2
 # DIM_H = [96, 192, 336, 720]  # Nombre de valeur à prédire pour une serie chronologique
 DIM_H = 96  # Nombre de valeur à prédire pour une serie chronologique
 DIM_E = 64  # Nombre de variable d'une serie chronologique apres encodeur ( taille couche sortie encodeur)
-# SIZE_M = 16  # Taille de la banque de mémoire ( voir papier taille 16)
-SIZE_M = 33  # Just for tests to distinguish
+SIZE_M = 16  # Taille de la banque de mémoire ( voir papier taille 16)
+# SIZE_M = 33  # Just for tests to distinguish
 MEMORY_COEF = 0.5
 DHAT_COEF = 0.5
 
 if __name__ == "__main__":
     # stage 1
-    dataset1 = datasets.DatasetLd(
-        path="data/LD2011_2014/LD2011_2014.pkl", DIM_T=DIM_T, DIM_H=DIM_H
+    train_dataset, val_dataset, test_dataset = datasets.load_ld_dataset(
+        "data/LD2011_2014/LD2011_2014.txt"
     )
 
-    dataloader1 = DataLoader(
-        dataset1,
+    train_loader = DataLoader(
+        train_dataset,
         batch_size=BATCH_SIZE,
-        shuffle=False,
-        collate_fn=dataset1.__collate_fn__,
-        drop_last=True,
+        shuffle=True,
     )
 
-    dim_c = dataset1.data.shape[1]  # Nombre de variables d'une serie chronologique
+    dim_c = train_dataset.data.shape[1]  # Nombre de variables d'une serie chronologique
 
     encoder = model.Encoder(dim_c)
     decoder = model.Decoder(dim_c)
@@ -155,7 +157,7 @@ if __name__ == "__main__":
     memory_bank = model.MemoryBank(SIZE_M, DIM_E)
 
     train_stage_1(
-        dataloader1,
+        train_loader,
         encoder,
         decoder,
         discriminator,
