@@ -125,15 +125,15 @@ def train_stage_1(
 #     return predictor
 
 
-# BATCH_SIZE = 64
-BATCH_SIZE = 99  # Just for tests to distinguish
+BATCH_SIZE = 64
+# BATCH_SIZE = 99  # Just for tests to distinguish
 DIM_T = 192  # Longeur d'une serie chronologique stage 1
 DIM_TT = 96  # Longeur d'une serie chronologique stage 2
 # DIM_H = [96, 192, 336, 720]  # Nombre de valeur à prédire pour une serie chronologique
 DIM_H = 96  # Nombre de valeur à prédire pour une serie chronologique
 DIM_E = 64  # Nombre de variable d'une serie chronologique apres encodeur ( taille couche sortie encodeur)
-# SIZE_M = 16  # Taille de la banque de mémoire ( voir papier taille 16)
-SIZE_M = 33  # Just for tests to distinguish
+SIZE_M = 16  # Taille de la banque de mémoire ( voir papier taille 16)
+# SIZE_M = 33  # Just for tests to distinguish
 MEMORY_COEF = 0.5
 DHAT_COEF = 0.5
 
