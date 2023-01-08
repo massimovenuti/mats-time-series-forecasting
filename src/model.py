@@ -73,14 +73,20 @@ class Discriminator(nn.Module):
 class Predictor(nn.Module):
     def __init__(self, dim_in):
         super().__init__()
-        self.network = nn.LSTM(
-            input_size=dim_in, hidden_size=1024, num_layers=2, dropout=0.5
+        self.lstm = nn.LSTM(
+            input_size=dim_in,
+            hidden_size=1024,
+            num_layers=2,
+            dropout=0.5,
         )
+        self.decoder = nn.Sequential(nn.Linear(1024, dim_in), nn.Softmax(dim=2))
 
-    def forward(self, x):
-        x, _ = self.network(x)
-        x = torch.softmax()(x)  # TODO : utiliser torch.softmax
-        return torch.tensor(x, dtype=torch.float16)
+    def forward(self, X, initial_state=None):
+        # no softmax because we use torch.nn.BCELoss
+        return self.lstm(X, initial_state)
+
+    def decode(self, H):
+        return self.decoder(H)
 
 
 class MemoryBank(nn.Module):
