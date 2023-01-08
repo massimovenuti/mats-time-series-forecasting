@@ -14,6 +14,7 @@ def train_stage_1(
     memory_coef,
     dhat_coef,
     epochs,
+    device
 ):
     optim_discriminator = torch.optim.Adam(discriminator.parameters(), lr=0.0001)
     optim_edm = torch.optim.Adam(
@@ -31,16 +32,16 @@ def train_stage_1(
             optim_edm.zero_grad()
             optim_discriminator.zero_grad()
 
-            X = torch.movedim(X, 1, 2)  # BATCH_SIZE X DIM_C X DIM_T
-            H = encoder(X)  # BATCH_SIZE X DIM_D X DIM_T2
-            C = memory_bank(H)  # BATCH_SIZE * DIM_M * DIM_T2
+            X = torch.movedim(X, 1, 2).to(device)  # BATCH_SIZE X DIM_C X DIM_T
+            H = encoder(X).to(device)  # BATCH_SIZE X DIM_D X DIM_T2
+            C = memory_bank(H).to(device)  # BATCH_SIZE * DIM_M * DIM_T2
 
-            Hhat = memory_bank.reconstruct(C)  # BATCH_SIZE X DIM_D X DIM_T2
+            Hhat = memory_bank.reconstruct(C).to(device)  # BATCH_SIZE X DIM_D X DIM_T2
 
-            Xhat = decoder(Hhat)  # BATCH_SIZE X DIM_C X DIM_T
+            Xhat = decoder(Hhat).to(device)  # BATCH_SIZE X DIM_C X DIM_T
 
-            D = discriminator(X)  # BATCH_SIZE X DIM_D X DIM_T2
-            Dhat = discriminator(Xhat)  #  BATCH_SIZE X DIM_D X DIM_T2
+            D = discriminator(X).to(device)  # BATCH_SIZE X DIM_D X DIM_T2
+            Dhat = discriminator(Xhat).to(device)  #  BATCH_SIZE X DIM_D X DIM_T2
 
             if e % 2 == 0:
                 # (4)
@@ -136,6 +137,7 @@ SIZE_M = 16  # Taille de la banque de mémoire ( voir papier taille 16)
 # SIZE_M = 33  # Just for tests to distinguish
 MEMORY_COEF = 0.5
 DHAT_COEF = 0.5
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if __name__ == "__main__":
     # stage 1
@@ -151,10 +153,10 @@ if __name__ == "__main__":
 
     dim_c = train_dataset.data.shape[1]  # Nombre de variables d'une serie chronologique
 
-    encoder = model.Encoder(dim_c)
-    decoder = model.Decoder(dim_c)
-    discriminator = model.Discriminator(dim_c)
-    memory_bank = model.MemoryBank(SIZE_M, DIM_E)
+    encoder = model.Encoder(dim_c).to(DEVICE)
+    decoder = model.Decoder(dim_c).to(DEVICE)
+    discriminator = model.Discriminator(dim_c).to(DEVICE)
+    memory_bank = model.MemoryBank(SIZE_M, DIM_E).to(DEVICE)
 
     train_stage_1(
         train_loader,
@@ -165,6 +167,7 @@ if __name__ == "__main__":
         MEMORY_COEF,
         DHAT_COEF,
         epochs=5,
+        device = DEVICE
     )
 
     # # stage 2
