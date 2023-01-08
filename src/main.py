@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader
 import torch
 from math import ceil
 import model
+from tqdm import tqdm
 
 
 def train_stage_1(
@@ -27,7 +28,7 @@ def train_stage_1(
     criterion_edm = model.EDMLoss(memory_coef, dhat_coef)
     criterion_discriminator = model.DiscriminatorLoss()
 
-    for epoch in range(epochs):
+    for epoch in tqdm(range(epochs)):
         for e, (X, _) in enumerate(dataloader):
             optim_edm.zero_grad()
             optim_discriminator.zero_grad()
