@@ -15,7 +15,7 @@ def train_stage_1(
     memory_coef,
     dhat_coef,
     epochs,
-    device
+    device,
 ):
     optim_discriminator = torch.optim.Adam(discriminator.parameters(), lr=0.0001)
     optim_edm = torch.optim.Adam(
@@ -138,7 +138,6 @@ SIZE_M = 16  # Taille de la banque de mémoire ( voir papier taille 16)
 # SIZE_M = 33  # Just for tests to distinguish
 MEMORY_COEF = 0.5
 DHAT_COEF = 0.5
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if __name__ == "__main__":
     # stage 1
@@ -152,12 +151,13 @@ if __name__ == "__main__":
         shuffle=True,
     )
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dim_c = train_dataset.data.shape[1]  # Nombre de variables d'une serie chronologique
 
-    encoder = model.Encoder(dim_c).to(DEVICE)
-    decoder = model.Decoder(dim_c).to(DEVICE)
-    discriminator = model.Discriminator(dim_c).to(DEVICE)
-    memory_bank = model.MemoryBank(SIZE_M, DIM_E).to(DEVICE)
+    encoder = model.Encoder(dim_c).to(device)
+    decoder = model.Decoder(dim_c).to(device)
+    discriminator = model.Discriminator(dim_c).to(device)
+    memory_bank = model.MemoryBank(SIZE_M, DIM_E).to(device)
 
     train_stage_1(
         train_loader,
@@ -168,7 +168,7 @@ if __name__ == "__main__":
         MEMORY_COEF,
         DHAT_COEF,
         epochs=5,
-        device = DEVICE
+        device=device,
     )
 
     # # stage 2
