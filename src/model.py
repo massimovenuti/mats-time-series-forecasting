@@ -87,7 +87,7 @@ class MemoryBank(nn.Module):
     def __init__(self, size, dim) -> None:
         super().__init__()
         units = torch.zeros((dim, size))
-        nn.init.uniform_(units)  # rq: ce n'est pas précisé dans le papier
+        nn.init.uniform_(units)
         self.units = nn.Parameter(units)
 
     def forward(self, H):
@@ -97,13 +97,13 @@ class MemoryBank(nn.Module):
         numerator = torch.stack(
             [
                 torch.exp(
-                    -(torch.linalg.norm(H.transpose(1, 2) - m, dim=2).pow(2))
+                    -torch.linalg.norm(H.transpose(1, 2) - m, dim=2) ** 2
                 )  # TODO : norm 1 ?
                 for m in self.units.T
             ],
             dim=2,
         )
-        denominator = torch.sum(numerator, dim=2).unsqueeze(2)
+        denominator = torch.sum(numerator, dim=1).unsqueeze(1)
         C = torch.transpose(numerator / denominator, 1, 2)
         return C
 
@@ -125,9 +125,13 @@ class DiscriminatorLoss(nn.Module):
 class EDMLoss(nn.Module):
     def __init__(self, memory_coef, dhat_coef) -> None:
         super().__init__()
-        self.reconstruction_loss = nn.MSELoss()
+        # self.reconstruction_loss = nn.MSELoss() # ?
         self.memory_coef = memory_coef
         self.dhat_coef = dhat_coef
+
+    def reconstruction_loss(self, Xhat, X):
+        loss = torch.linalg.norm(Xhat - X, dim=(1, 2)).pow(2).mean()
+        return loss
 
     def memory_loss(self, H, M):
         norms = torch.stack(
@@ -135,10 +139,11 @@ class EDMLoss(nn.Module):
             dim=2,
         )
         Z = M.T[torch.argmin(norms, dim=2)].transpose(1, 2)
-        diffs = torch.linalg.norm(H.detach() - Z, dim=1).pow(2) + torch.linalg.norm(
-            H - Z.detach(), dim=1
-        ).pow(2)
-        loss = diffs.sum() / np.prod(H.shape)
+        sums = (
+            torch.linalg.norm(H.detach() - Z, dim=1) ** 2
+            + torch.linalg.norm(H - Z.detach(), dim=1) ** 2
+        )
+        loss = sums.mean()
         return loss
 
     def forward(self, Xhat, X, H, M, Dhat):
@@ -147,3 +152,18 @@ class EDMLoss(nn.Module):
             + self.memory_coef * self.memory_loss(H, M)
             - self.dhat_coef * Dhat.mean()
         )
+
+
+def calcule_loss_pred(DIM_T2, DIM_HH, DATA_C_reconstruit, DATA_CC):
+    loss = (1 / (DIM_T2 + DIM_HH)) * torch.nn.functional.binary_cross_entropy(
+        DATA_CC, DATA_C_reconstruit
+    )
+    return loss
+
+
+def calcule_mse(DIM_N, DIM_H, DIM_C, y, y_pred):
+    return (1 / DIM_N * DIM_H * DIM_C) * torch.nn.functional.mse_loss(y_pred, y)
+
+
+def calcule_mae(DIM_N, DIM_H, DIM_C, y, y_pred):
+    return (1 / DIM_N * DIM_H * DIM_C) * torch.nn.functional.l1_loss(y_pred, y)
