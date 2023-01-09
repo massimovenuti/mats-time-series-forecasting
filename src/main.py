@@ -135,7 +135,9 @@ DHAT_COEF = 0.5
 
 if __name__ == "__main__":
     # stage 1
-    train_dataset, val_dataset, test_dataset = datasets.load_weather_dataset()
+    train_dataset, val_dataset, test_dataset = datasets.load_ld_dataset(
+        "data/LD2011_2014/LD2011_2014.txt"
+    )
 
     train_loader = DataLoader(
         train_dataset,
