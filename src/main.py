@@ -51,8 +51,8 @@ def train_stage_1(dataloader, state, memory_coef, dhat_coef, epochs, device, sav
 
             state.stage_1_iteration += 1
 
+        state.stage_1_epoch = epoch + 1
         with save_path.open("wb") as fp:
-            state.stage_1_epoch = epoch + 1
             torch.save(state, fp)
 
 
@@ -61,7 +61,7 @@ def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
 
     for epoch in range(state.stage_2_epoch, epochs):
         for e, (X, y) in enumerate(dataloader):
-            optim_predictor.zero_grad()
+            state.optim_predictor.zero_grad()
 
             # (1)
             # CNN waits dim N * C_in * L
@@ -107,7 +107,7 @@ def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
             # (7)
             loss = criterion_predictor(Chat, C_gt)
             loss.backward()
-            optim_predictor.step()
+            state.optim_predictor.step()
 
             # TODO : use tensorboard
             if e % 20 == 0:
