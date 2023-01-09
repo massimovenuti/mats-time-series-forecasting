@@ -12,7 +12,6 @@ def train_stage_1(dataloader, state, memory_coef, dhat_coef, epochs, device, sav
     criterion_edm = mats.EDMLoss(memory_coef, dhat_coef)
     criterion_discriminator = mats.DiscriminatorLoss()
 
-    iteration = 0
     for epoch in range(state.stage_1_epoch, epochs):
         for e, (X, _) in enumerate(dataloader):
             state.optim_edm.zero_grad()
@@ -50,8 +49,7 @@ def train_stage_1(dataloader, state, memory_coef, dhat_coef, epochs, device, sav
                     f"Loss : {loss:.2f}"
                 )
 
-            iteration = iteration + 1
-            state.stage_1_iteration = iteration
+            state.stage_1_iteration += 1
 
         with save_path.open("wb") as fp:
             state.stage_1_epoch = epoch + 1
@@ -61,7 +59,6 @@ def train_stage_1(dataloader, state, memory_coef, dhat_coef, epochs, device, sav
 def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
     criterion_predictor = nn.BCELoss()
 
-    iteration = 0
     for epoch in range(state.stage_2_epoch, epochs):
         for e, (X, y) in enumerate(dataloader):
             optim_predictor.zero_grad()
@@ -116,8 +113,7 @@ def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
             if e % 20 == 0:
                 print(f"[{epoch}/{epochs}][{e}/{len(dataloader)}]\t Loss : {loss:.2f}")
 
-            iteration = iteration + 1
-            state.stage_2_iteration = iteration
+            state.stage_2_iteration += 1
 
         state.stage_2_epoch = epoch + 1
         with save_path.open("wb") as fp:
