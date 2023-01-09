@@ -110,8 +110,8 @@ def load_ETT_dataset(
     train_proportion=0.6,
     val_proportion=0.2,
     normalize=True,
-    dim_t=60,
-    dim_h=24,
+    dim_t=192,
+    dim_h=96,
 ):
     """path: path to the file containing the ETT data (by default "../data/ETT/ETT*")
     \nWarning - Do not specify the file ending in the path ('*h1.txt' for example)
