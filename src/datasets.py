@@ -69,6 +69,39 @@ def load_ld_dataset(
 
     return train_dataset, val_dataset, test_dataset
 
+# Electricity dataset management
+def load_elec_dataset(
+    path="../data/Electricity/LD2011_2014.txt", 
+    train_proportion=0.7, 
+    val_proportion=0.1, 
+    normalize=True, 
+    dim_t=192, 
+    dim_h=96
+):
+    """path: path to the file containing the Electricity data (by default "../data/Electricity/LD2011_2014.txt")
+    \ntrain_proportion: proportion of values for the training set (by default 0.7)
+    \nval_proportion: proportion of values for the validation set (by default 0.1)
+    \ndim_t: (by default 96 in Stage 1)
+    \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
+    \nAll default values except 'path' are from the paper, section 4. Experiments
+    """
+
+    # Data collecting and cleaning (copied from load_ld_dataset)
+    data = pd.read_csv(path, decimal=",", sep=";")
+    data = data_to_hour(data)
+    data = data_filter_client(data)
+    data = data.drop(columns=data.columns[0], axis=1)
+
+    # Dataset split
+    data_train, data_val, data_test = train_val_test_split(
+        data, train_proportion, val_proportion, normalize
+    )
+    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
+    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
+    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
+
+    # Returning the split
+    return train_dataset, val_dataset, test_dataset
 
 # ETT dataset management
 def load_ETT_dataset(
