@@ -56,7 +56,7 @@ def data_filter_client(df,number_client=320):
 def load_ld_dataset(
     path, train_proportion=0.7, val_proportion=0.1, normalize=True, dim_t=192, dim_h=96
 ):
-    data = pd.read_csv(path, decimal=",", sep=";")
+    data = pd.read_csv(path, decimal=".", sep=",")
     data = data_to_hour(data)
     data = data_filter_client(data)
     data = data.drop(columns=data.columns[0], axis=1)
@@ -69,6 +69,176 @@ def load_ld_dataset(
     val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
     test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
 
+    return train_dataset, val_dataset, test_dataset
+
+
+
+
+# ETT dataset management
+def load_ETT_dataset(
+    path="../data/ETT/ETT", choice="h1", train_proportion=0.6, val_proportion=0.2, 
+    normalize=True, dim_t=60, dim_h=24
+):
+    """ path: path to the file containing the ETT data (by default "../data/ETT/ETT*")
+    \nWarning - Do not specify the file ending in the path ('*h1.txt' for example)
+    \nchoice: data to be used (by default "h1", choose between {'h1', 'h2', 'm1', 'm2'})
+    \ntrain_proportion: proportion of values for the training set (by default 0.7)
+    \nval_proportion: proportion of values for the validation set (by default 0.1)
+    \ndim_t: (by default 96 in Stage 1)
+    \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
+    \nAll default values except 'path' are from the paper, section 4. Experiments
+    """
+    # File selection
+    if choice not in ["h1", "h2", "m1", "m2"]:
+        path += "h1.txt" # In case there's an error in choice, h1 is the default choice
+    else :
+        path += choice + ".txt"
+
+    # CSV file into pandas conversion and cleaning
+    data = pd.read_csv(path)
+    data = data.select_dtypes([np.number]) # Removing non-numeric columns
+
+    # Dataset split
+    data_train, data_val, data_test = train_val_test_split(
+        data, train_proportion, val_proportion, normalize
+    )
+    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
+    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
+    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
+
+    # Returning the split
+    return train_dataset, val_dataset, test_dataset
+
+
+
+
+# Exchange dataset management
+def load_exchange_dataset(
+    path="../data/Exchange/exchange_rate.txt", train_proportion=0.7, val_proportion=0.1, 
+    normalize=True, dim_t=192, dim_h=96
+):
+    """ path: path to the file containing the Exchange data (by default "../data/Exchange/exchange_rate.txt")
+    \ntrain_proportion: proportion of values for the training set (by default 0.7)
+    \nval_proportion: proportion of values for the validation set (by default 0.1)
+    \ndim_t: (by default 96 in Stage 1)
+    \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
+    \nAll default values except 'path' are from the paper, section 4. Experiments
+    """
+
+    # CSV file into pandas conversion and cleaning
+    data = pd.read_csv(path, decimal=".", sep=",")
+    data = data.select_dtypes([np.number]) # Removing non-numeric columns
+
+    # Dataset split
+    data_train, data_val, data_test = train_val_test_split(
+        data, train_proportion, val_proportion, normalize
+    )
+    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
+    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
+    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
+
+    # Returning the split
+    return train_dataset, val_dataset, test_dataset
+
+
+
+# ILI dataset management
+def load_ILI_dataset(
+    path="../data/ILI/ILINet.csv", train_proportion=0.6, val_proportion=0.2, 
+    normalize=True, dim_t=60, dim_h=24
+):
+    """ path: path to the file containing the ILI data (by default "../data/ILI/ILINet.csv")
+    \ntrain_proportion: proportion of values for the training set (by default 0.6)
+    \nval_proportion: proportion of values for the validation set (by default 0.2)
+    \ndim_t: (by default 60)
+    \ndim_h: (by default 24, choose value in {24, 36, 48, 60})
+    \nAll default values except 'path' are from the paper, section 4. Experiments
+    """
+
+    # CSV file into pandas conversion and cleaning
+    data = pd.read_csv(path)
+    data = data.select_dtypes([np.number]) # Removing non-numeric columns
+    # data = data.drop(['AGE 0-4','AGE 5-24','AGE 65'], axis=1) # Can be discussed
+
+    # Dataset split
+    data_train, data_val, data_test = train_val_test_split(
+        data, train_proportion, val_proportion, normalize
+    )
+    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
+    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
+    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
+
+    # Returning the split
+    return train_dataset, val_dataset, test_dataset
+
+# TODO: Fix this ILI error when used in Stage 2
+# ValueError: Using a target size (torch.Size([7, 64, 16])) that is different to the input size 
+# (torch.Size([13, 64, 16])) is deprecated. Please ensure they have the same size.
+
+
+
+
+# Traffic dataset management
+def load_traffic_dataset(
+    path="../data/Traffic/traffic-5-years.txt", train_proportion=0.7, val_proportion=0.1, 
+    normalize=True, dim_t=192, dim_h=96
+):
+    """ path: path to the file containing the Traffic data (by default "../data/Traffic/traffic-5-years.txt")
+    \ntrain_proportion: proportion of values for the training set (by default 0.7)
+    \nval_proportion: proportion of values for the validation set (by default 0.1)
+    \ndim_t: (by default 96 in Stage 1)
+    \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
+    \nAll default values except 'path' are from the paper, section 4. Experiments
+    """
+
+    # CSV file into pandas conversion and cleaning
+    data = pd.read_csv(path, header=None, skiprows=1)
+    # Every entry is actually one big String, need to split multiple times, rename and drop
+    data[['Date', 'VMT']] = data[0].str.split("\t", expand=True)
+    data[['Miles', '# Lane Points', '% Observed']] = data[2].str.split("\t", expand=True)
+    data.rename(columns={1: "Veh"}, inplace=True)
+    data.drop([0, 2, 'Date'], inplace=True, axis=1)
+    # Transform all columns into numeric columns
+    data[data.columns] = data[data.columns].apply(pd.to_numeric, errors='coerce') 
+
+    # Dataset split
+    data_train, data_val, data_test = train_val_test_split(
+        data, train_proportion, val_proportion, normalize
+    )
+    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
+    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
+    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
+
+    # Returning the split
+    return train_dataset, val_dataset, test_dataset
+
+
+# Weather dataset management
+def load_weather_dataset(
+    path="../data/Weather/mpi_roof_2020.csv", train_proportion=0.7, val_proportion=0.1, 
+    normalize=True, dim_t=192, dim_h=96
+):
+    """ path: path to the file containing the Weather data (by default "../data/Weather/mpi_roof_2020.csv")
+    \ntrain_proportion: proportion of values for the training set (by default 0.7)
+    \nval_proportion: proportion of values for the validation set (by default 0.1)
+    \ndim_t: (by default 96 in Stage 1)
+    \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
+    \nAll default values except 'path' are from the paper, section 4. Experiments
+    """
+
+    # CSV file into pandas conversion and cleaning
+    data = pd.read_csv(path)
+    data = data.select_dtypes([np.number])
+
+    # Dataset split
+    data_train, data_val, data_test = train_val_test_split(
+        data, train_proportion, val_proportion, normalize
+    )
+    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
+    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
+    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
+
+    # Returning the split
     return train_dataset, val_dataset, test_dataset
 
 
