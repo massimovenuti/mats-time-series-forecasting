@@ -153,3 +153,29 @@ class EDMLoss(nn.Module):
             + self.memory_coef * self.memory_loss(H, M)
             - self.dhat_coef * Dhat.mean()
         )
+
+
+class State:
+    def __init__(
+        self,
+        encoder,
+        decoder,
+        memory_bank,
+        discriminator,
+        predictor,
+        optim_edm,
+        optim_discriminator,
+        optim_predictor,
+    ) -> None:
+        self.encoder = encoder
+        self.decoder = decoder
+        self.memory_bank = memory_bank
+        self.discriminator = discriminator
+        self.predictor = predictor
+        self.optim_edm = optim_edm
+        self.optim_discriminator = optim_discriminator
+        self.optim_predictor = optim_predictor
+        self.stage_1_epoch = 0
+        self.stage_1_iteration = 0
+        self.stage_2_epoch = 0
+        self.stage_2_iteration = 0
