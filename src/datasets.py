@@ -91,6 +91,8 @@ def load_elec_dataset(
     data = data_to_hour(data)
     data = data_filter_client(data)
     data = data.drop(columns=data.columns[0], axis=1)
+    # Idea - Adding a total value column otherwise the number of columns 
+    # doesn't match the paper values (320 against 321)
 
     # Dataset split
     data_train, data_val, data_test = train_val_test_split(
@@ -162,7 +164,7 @@ def load_exchange_dataset(
     """
 
     # CSV file into pandas conversion and cleaning
-    data = pd.read_csv(path, decimal=".", sep=",")
+    data = pd.read_csv(path, decimal=".", sep=",", header=None)
     data = data.select_dtypes([np.number])  # Removing non-numeric columns
 
     # Dataset split
@@ -196,8 +198,19 @@ def load_ILI_dataset(
 
     # CSV file into pandas conversion and cleaning
     data = pd.read_csv(path)
-    data = data.select_dtypes([np.number])  # Removing non-numeric columns
-    # data = data.drop(['AGE 0-4','AGE 5-24','AGE 65'], axis=1) # Can be discussed
+    data.drop(['YEAR', 'WEEK', 'REGION TYPE', 'REGION', '% WEIGHTED ILI', '%UNWEIGHTED ILI'], inplace=True, axis=1) # Removing percentage data and timestamps
+    # Need to compute missing AGE 25-64 from AGE 25-49 and AGE 50-64
+    # Missing values are represented by 'X'
+    def compute_total(d):
+        if d['AGE 25-64'] == "X":
+            return int(d['AGE 25-49']) + int(d['AGE 50-64'])
+        return int(d['AGE 25-64'])
+    data['AGE 25-64'] = data.apply(compute_total, axis=1)
+    # We remove the useless columns to only keep 7 like shown in the paper
+    # AGE 25-49 and AGE 50-64 are useless if we have AGE 25-64
+    data.drop(['AGE 25-49', 'AGE 50-64'], inplace=True, axis=1)
+
+    # TODO: Number of entries = 992 while paper shows that we must only keep 966
 
     # Dataset split
     data_train, data_val, data_test = train_val_test_split(
@@ -303,3 +316,5 @@ class TimeSeriesDataset(data.Dataset):
         X = self.data[indice : indice + self.dim_t]
         y = self.data[indice + self.dim_t : indice + self.dim_t + self.dim_h]
         return X, y
+
+load_elec_dataset()
