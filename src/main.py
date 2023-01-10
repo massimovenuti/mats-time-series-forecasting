@@ -230,7 +230,6 @@ if __name__ == "__main__":
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device("cpu")
     save_path = Path(STATES_DIR, "mats.pkl")
     save_path.parent.mkdir(exist_ok=True)
 
