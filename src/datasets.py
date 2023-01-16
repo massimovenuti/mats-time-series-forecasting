@@ -81,7 +81,7 @@ def load_elec_dataset(
     """path: path to the file containing the Electricity data (by default "../data/Electricity/LD2011_2014.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
-    \ndim_t: (by default 96 in Stage 1)
+    \ndim_t: (by default 192 in Stage 1)
     \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
@@ -120,7 +120,7 @@ def load_ETT_dataset(
     \nchoice: data to be used (by default "h1", choose between {'h1', 'h2', 'm1', 'm2'})
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
-    \ndim_t: (by default 96 in Stage 1)
+    \ndim_t: (by default 192 in Stage 1)
     \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
@@ -158,7 +158,7 @@ def load_exchange_dataset(
     """path: path to the file containing the Exchange data (by default "../data/Exchange/exchange_rate.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
-    \ndim_t: (by default 96 in Stage 1)
+    \ndim_t: (by default 192 in Stage 1)
     \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
@@ -231,7 +231,7 @@ def load_ILI_dataset(
 
 # Traffic dataset management
 def load_traffic_dataset(
-    path="../data/Traffic/traffic-5-years.txt",
+    path="../data/Traffic/traffic_hourly_dataset.txt",
     train_proportion=0.7,
     val_proportion=0.1,
     normalize=True,
@@ -241,22 +241,16 @@ def load_traffic_dataset(
     """path: path to the file containing the Traffic data (by default "../data/Traffic/traffic-5-years.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
-    \ndim_t: (by default 96 in Stage 1)
+    \ndim_t: (by default 192 in Stage 1)
     \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
 
     # CSV file into pandas conversion and cleaning
-    data = pd.read_csv(path, header=None, skiprows=1)
-    # Every entry is actually one big String, need to split multiple times, rename and drop
-    data[["Date", "VMT"]] = data[0].str.split("\t", expand=True)
-    data[["Miles", "# Lane Points", "% Observed"]] = data[2].str.split(
-        "\t", expand=True
-    )
-    data.rename(columns={1: "Veh"}, inplace=True)
-    data.drop([0, 2, "Date"], inplace=True, axis=1)
-    # Transform all columns into numeric columns
-    data[data.columns] = data[data.columns].apply(pd.to_numeric, errors="coerce")
+    data = pd.read_csv(path, header=None, decimal=".", sep=",")
+    # Need to remove the timestamp to only keep numeric values
+    data[0] = data[0].map(lambda x: float(x.split(':')[2]))
+    data = data.select_dtypes([np.number])  # Removing non-numeric columns
 
     # Dataset split
     data_train, data_val, data_test = train_val_test_split(
@@ -282,7 +276,7 @@ def load_weather_dataset(
     """path: path to the file containing the Weather data (by default "../data/Weather/mpi_roof_2020.csv")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
-    \ndim_t: (by default 96 in Stage 1)
+    \ndim_t: (by default 192 in Stage 1)
     \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
@@ -316,5 +310,3 @@ class TimeSeriesDataset(data.Dataset):
         X = self.data[indice : indice + self.dim_t]
         y = self.data[indice + self.dim_t : indice + self.dim_t + self.dim_h]
         return X, y
-
-load_elec_dataset()
