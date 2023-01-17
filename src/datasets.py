@@ -76,13 +76,15 @@ def load_elec_dataset(
     val_proportion=0.1, 
     normalize=True, 
     dim_t=192, 
-    dim_h=96
+    dim_h=96,
+    showShape=False
 ):
     """path: path to the file containing the Electricity data (by default "../data/Electricity/LD2011_2014.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
     \ndim_t: (by default 192 in Stage 1)
     \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
+    \nshowShape: will stop the execution after the dataset creation to show it's size, no returns
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
 
@@ -93,6 +95,10 @@ def load_elec_dataset(
     data = data.drop(columns=data.columns[0], axis=1)
     # Idea - Adding a total value column otherwise the number of columns 
     # doesn't match the paper values (320 against 321)
+
+    if (showShape):
+        print("Elec shape :", data.shape)
+        return
 
     # Dataset split
     data_train, data_val, data_test = train_val_test_split(
@@ -114,6 +120,7 @@ def load_ETT_dataset(
     normalize=True,
     dim_t=192,
     dim_h=96,
+    showShape=False
 ):
     """path: path to the file containing the ETT data (by default "../data/ETT/ETT*")
     \nWarning - Do not specify the file ending in the path ('*h1.txt' for example)
@@ -122,6 +129,7 @@ def load_ETT_dataset(
     \nval_proportion: proportion of values for the validation set (by default 0.1)
     \ndim_t: (by default 192 in Stage 1)
     \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
+    \nshowShape: will stop the execution after the dataset creation to show it's size, no returns
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
     # File selection
@@ -133,6 +141,10 @@ def load_ETT_dataset(
     # CSV file into pandas conversion and cleaning
     data = pd.read_csv(path)
     data = data.select_dtypes([np.number])  # Removing non-numeric columns
+
+    if (showShape) :
+        print("ETT", choice, "shape :", data.shape)
+        return
 
     # Dataset split
     data_train, data_val, data_test = train_val_test_split(
@@ -154,18 +166,24 @@ def load_exchange_dataset(
     normalize=True,
     dim_t=192,
     dim_h=96,
+    showShape=False
 ):
     """path: path to the file containing the Exchange data (by default "../data/Exchange/exchange_rate.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
     \ndim_t: (by default 192 in Stage 1)
     \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
+    \nshowShape: will stop the execution after the dataset creation to show it's size, no returns
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
 
     # CSV file into pandas conversion and cleaning
     data = pd.read_csv(path, decimal=".", sep=",", header=None)
     data = data.select_dtypes([np.number])  # Removing non-numeric columns
+
+    if (showShape) :
+        print("Exchange shape :", data.shape)
+        return
 
     # Dataset split
     data_train, data_val, data_test = train_val_test_split(
@@ -187,12 +205,14 @@ def load_ILI_dataset(
     normalize=True,
     dim_t=60,
     dim_h=24,
+    showShape=False
 ):
     """path: path to the file containing the ILI data (by default "../data/ILI/ILINet.csv")
     \ntrain_proportion: proportion of values for the training set (by default 0.6)
     \nval_proportion: proportion of values for the validation set (by default 0.2)
     \ndim_t: (by default 60)
     \ndim_h: (by default 24, choose value in {24, 36, 48, 60})
+    \nshowShape: will stop the execution after the dataset creation to show it's size, no returns
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
 
@@ -209,6 +229,10 @@ def load_ILI_dataset(
     # We remove the useless columns to only keep 7 like shown in the paper
     # AGE 25-49 and AGE 50-64 are useless if we have AGE 25-64
     data.drop(['AGE 25-49', 'AGE 50-64'], inplace=True, axis=1)
+
+    if (showShape) :
+        print("ILI shape :", data.shape)
+        return
 
     # TODO: Number of entries = 992 while paper shows that we must only keep 966
 
@@ -237,12 +261,14 @@ def load_traffic_dataset(
     normalize=True,
     dim_t=192,
     dim_h=96,
+    showShape=False
 ):
     """path: path to the file containing the Traffic data (by default "../data/Traffic/traffic-5-years.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
     \ndim_t: (by default 192 in Stage 1)
     \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
+    \nshowShape: will stop the execution after the dataset creation to show it's size, no returns
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
 
@@ -251,6 +277,11 @@ def load_traffic_dataset(
     # Need to remove the timestamp to only keep numeric values
     data[0] = data[0].map(lambda x: float(x.split(':')[2]))
     data = data.select_dtypes([np.number])  # Removing non-numeric columns
+    data = data.T # Need to transpose the dataframe, otherwise incorrect data shape
+
+    if (showShape) :
+        print("Traffic shape :", data.shape)
+        return
 
     # Dataset split
     data_train, data_val, data_test = train_val_test_split(
@@ -272,18 +303,24 @@ def load_weather_dataset(
     normalize=True,
     dim_t=192,
     dim_h=96,
+    showShape=False
 ):
     """path: path to the file containing the Weather data (by default "../data/Weather/mpi_roof_2020.csv")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
     \ndim_t: (by default 192 in Stage 1)
     \ndim_h: (by default 96, choose value in {96, 192, 336, 720})
+    \nshowShape: will stop the execution after the dataset creation to show it's size, no returns
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
 
     # CSV file into pandas conversion and cleaning
     data = pd.read_csv(path)
     data = data.select_dtypes([np.number])
+
+    if (showShape) :
+        print("Weather shape :", data.shape)
+        return
 
     # Dataset split
     data_train, data_val, data_test = train_val_test_split(
@@ -310,3 +347,12 @@ class TimeSeriesDataset(data.Dataset):
         X = self.data[indice : indice + self.dim_t]
         y = self.data[indice + self.dim_t : indice + self.dim_t + self.dim_h]
         return X, y
+
+# Dataset shapes confirmation
+if __name__ == "__main__":
+    load_elec_dataset(showShape=True)
+    load_ETT_dataset(showShape=True)
+    load_exchange_dataset(showShape=True)
+    load_ILI_dataset(showShape=True)
+    load_traffic_dataset(showShape=True)
+    load_weather_dataset(showShape=True)
