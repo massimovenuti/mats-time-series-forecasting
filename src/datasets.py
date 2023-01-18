@@ -229,12 +229,12 @@ def load_ILI_dataset(
     # We remove the useless columns to only keep 7 like shown in the paper
     # AGE 25-49 and AGE 50-64 are useless if we have AGE 25-64
     data.drop(['AGE 25-49', 'AGE 50-64'], inplace=True, axis=1)
+    # We remove the last 26 lines of the dataset to match the expected number of lines from the paper
+    data.drop(data.tail(26).index, inplace=True)
 
     if (showShape) :
         print("ILI shape :", data.shape)
         return
-
-    # TODO: Number of entries = 992 while paper shows that we must only keep 966
 
     # Dataset split
     data_train, data_val, data_test = train_val_test_split(
