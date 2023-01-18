@@ -248,11 +248,6 @@ def load_ILI_dataset(
     return train_dataset, val_dataset, test_dataset
 
 
-# TODO: Fix this ILI error when used in Stage 2
-# ValueError: Using a target size (torch.Size([7, 64, 16])) that is different to the input size
-# (torch.Size([13, 64, 16])) is deprecated. Please ensure they have the same size.
-
-
 # Traffic dataset management
 def load_traffic_dataset(
     path="../data/Traffic/traffic_hourly_dataset.txt",
