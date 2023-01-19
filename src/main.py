@@ -199,8 +199,8 @@ def test(loader, state, dim_h, device):
         Xpred = inference(X, state, dim_h, device)
         mse = torch.nn.functional.mse_loss(Xpred, y, reduction="mean")
         mae = torch.nn.functional.l1_loss(Xpred, y, reduction="mean")
-        list_mse.append(mse)
-        list_mae.append(mae)
+        list_mse.append(mse.cpu())
+        list_mae.append(mae.cpu())
 
     return list_mse, list_mae
 
