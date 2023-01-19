@@ -1,4 +1,5 @@
 from torch import nn
+from torch import autograd
 import torch
 import numpy as np
 
@@ -129,11 +130,12 @@ class DiscriminatorLoss(nn.Module):
 
 
 class EDMLoss(nn.Module):
-    def __init__(self, memory_coef, dhat_coef) -> None:
+    def __init__(self, decoder, alpha=1.0, gamma=1e-6) -> None:
         super().__init__()
         self.reconstruction_loss = nn.MSELoss()
-        self.memory_coef = memory_coef
-        self.dhat_coef = dhat_coef
+        self.decoder_last_layer = decoder.network[-1].weight
+        self.alpha = alpha
+        self.gamma = gamma
 
     def memory_loss(self, H, M):
         norms = torch.stack(
@@ -147,12 +149,27 @@ class EDMLoss(nn.Module):
         loss = diffs.sum() / np.prod(H.shape)
         return loss
 
-    def forward(self, Xhat, X, H, M, Dhat):
-        return (
-            self.reconstruction_loss(Xhat, X)
-            + self.memory_coef * self.memory_loss(H, M)
-            - self.dhat_coef * Dhat.mean()
+    def calc_adaptive_weight(self, loss_rec, loss_d, last_layer):
+        # TODO : VQGAN recommands to set lambda = 0 for at least 1 epoch
+        # They set lambda to 0 in an initial warm-up phase
+        # They found that longer warm-ups generally lead to better reconstructions
+        rec_grads = autograd.grad(loss_rec, last_layer, retain_graph=True)[0]
+        d_grads = autograd.grad(loss_d, last_layer, retain_graph=True)[0]
+
+        weight = torch.linalg.norm(rec_grads) / (
+            torch.linalg.norm(d_grads) + self.gamma
         )
+
+        return weight.detach()
+
+    def forward(self, Xhat, X, H, M, Dhat):
+        loss_rec = self.reconstruction_loss(Xhat, X)
+        loss_m = self.memory_loss(H, M)
+        loss_d = -Dhat.mean()
+
+        lmbda = self.calc_adaptive_weight(loss_rec, loss_d, self.decoder_last_layer)
+
+        return loss_rec + self.alpha * loss_m + lmbda * loss_d
 
 
 class State:

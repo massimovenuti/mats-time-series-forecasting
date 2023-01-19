@@ -8,16 +8,15 @@ import numpy as np
 from pathlib import Path
 
 
-def train_stage_1(dataloader, state, memory_coef, dhat_coef, epochs, device, save_path):
-    
-    state.encoder.train() 
+def train_stage_1(dataloader, state, epochs, device, save_path):
+
+    state.encoder.train()
     state.decoder.train()
-    state.memory_bank.train() 
-    state.discriminator.train() 
-    state.predictor.train() 
-        
-    
-    criterion_edm = mats.EDMLoss(memory_coef, dhat_coef)
+    state.memory_bank.train()
+    state.discriminator.train()
+    state.predictor.train()
+
+    criterion_edm = mats.EDMLoss(state.decoder)
     criterion_discriminator = mats.DiscriminatorLoss()
 
     iteration = 0
@@ -67,12 +66,12 @@ def train_stage_1(dataloader, state, memory_coef, dhat_coef, epochs, device, sav
 
 
 def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
-    state.encoder.train() 
+    state.encoder.train()
     state.decoder.train()
-    state.memory_bank.train() 
-    state.discriminator.train() 
-    state.predictor.train() 
-    
+    state.memory_bank.train()
+    state.discriminator.train()
+    state.predictor.train()
+
     criterion_predictor = nn.BCELoss()
 
     iteration = 0
@@ -136,15 +135,16 @@ def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
         state.stage_2_epoch = epoch + 1
         with save_path.open("wb") as fp:
             torch.save(state, fp)
-            
+
+
 def inference(X, state, dim_h, device):
-    state.encoder.eval() 
+    state.encoder.eval()
     state.decoder.eval()
-    state.memory_bank.eval() 
-    state.discriminator.eval() 
-    state.predictor.eval() 
-    
-    with torch.no_grad() :
+    state.memory_bank.eval()
+    state.discriminator.eval()
+    state.predictor.eval()
+
+    with torch.no_grad():
 
         # (1)
         # CNN waits dim N * C_in * L
@@ -161,43 +161,49 @@ def inference(X, state, dim_h, device):
         C = C.movedim((0, 1, 2), (1, 2, 0))  # DIM_T2 * BATCH_SIZE * DIM_M
         # DIM_T2 * BATCH_SIZE * DIM_M
         pred_output, (last_hidden, last_cell) = state.predictor(C)
-        prediction = state.predictor.decode(pred_output).to(device)   # DIM_T2 * BATCH_SIZE * DIM_M
+        prediction = state.predictor.decode(pred_output).to(
+            device
+        )  # DIM_T2 * BATCH_SIZE * DIM_M
 
         all_predictions = [prediction]
         for _ in range(dim_h2):
             pred_output, (last_hidden, last_cell) = state.predictor(
                 prediction[-1].unsqueeze(0), (last_hidden, last_cell)
             )
-            prediction = state.predictor.decode(pred_output).to(device) 
+            prediction = state.predictor.decode(pred_output).to(device)
             all_predictions.append(prediction)
 
-
         # (DIM_T2 + DIM_H2) * BATCH_SIZE * DIM_M
-        Chat = torch.vstack(all_predictions).to(device) 
-        Chat = Chat.movedim((0, 1, 2), (2, 0, 1)) # BATCH_SIZE * DIM_M * (DIM_T2 + DIM_H2)
+        Chat = torch.vstack(all_predictions).to(device)
+        Chat = Chat.movedim(
+            (0, 1, 2), (2, 0, 1)
+        )  # BATCH_SIZE * DIM_M * (DIM_T2 + DIM_H2)
 
         # (2)
-        Hhat = state.memory_bank.reconstruct(Chat).to(device)  # BATCH_SIZE X DIM_D X (DIM_T2 + DIM_H2)
+        Hhat = state.memory_bank.reconstruct(Chat).to(
+            device
+        )  # BATCH_SIZE X DIM_D X (DIM_T2 + DIM_H2)
         Xhat = state.decoder(Hhat).to(device)  # BATCH_SIZE X DIM_C X (DIM_T2 + DIM_H2)
-        Xpred = Xhat[:,:,dim_t:]
-        
-    return Xpred.movedim(( 1, 2), (2, 1)) # BATCH_SIZE  X  DIM_H X DIM_C
+        Xpred = Xhat[:, :, dim_t:]
+
+    return Xpred.movedim((1, 2), (2, 1))  # BATCH_SIZE  X  DIM_H X DIM_C
 
 
-def test(loader,state, dim_h, device):
+def test(loader, state, dim_h, device):
     list_mse = []
     list_mae = []
 
-    for X,y in loader :
+    for X, y in loader:
         X = X.to(device)
         y = y.to(device)
-        Xpred = inference(X, state , dim_h, device)
-        mse = torch.nn.functional.mse_loss(Xpred, y, reduction='mean')
-        mae = torch.nn.functional.l1_loss(Xpred, y, reduction='mean')
+        Xpred = inference(X, state, dim_h, device)
+        mse = torch.nn.functional.mse_loss(Xpred, y, reduction="mean")
+        mae = torch.nn.functional.l1_loss(Xpred, y, reduction="mean")
         list_mse.append(mse)
         list_mae.append(mae)
-    
-    return list_mse,list_mae
+
+    return list_mse, list_mae
+
 
 # torch.cuda.set_per_process_memory_fraction(1., 0)
 
@@ -210,11 +216,8 @@ DIM_H = 96  # Nombre de valeur à prédire pour une serie chronologique
 DIM_E = 64  # Nombre de variable d'une serie chronologique apres encodeur ( taille couche sortie encodeur)
 SIZE_M = 16  # Taille de la banque de mémoire ( voir papier taille 16)
 # SIZE_M = 33  # Just for tests to distinguish
-MEMORY_COEF = 0.5
-DHAT_COEF = 0.5
 
 STATES_DIR = "states/"
-
 
 
 if __name__ == "__main__":
@@ -225,6 +228,18 @@ if __name__ == "__main__":
 
     train_loader = DataLoader(
         train_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
     )
@@ -269,9 +284,7 @@ if __name__ == "__main__":
     train_stage_1(
         train_loader,
         mats_state,
-        MEMORY_COEF,
-        DHAT_COEF,
-        epochs=1,
+        epochs=1000,
         device=device,
         save_path=save_path,
     )
@@ -288,11 +301,26 @@ if __name__ == "__main__":
             param.requires_grad = False
 
     train_stage_2(
-        train_loader, mats_state, DIM_H, epochs=1, device=device, save_path=save_path
+        train_loader, mats_state, DIM_H, epochs=500, device=device, save_path=save_path
     )
 
-    list_mse,list_mae = test(train_loader,mats_state, DIM_H, device)
+    list_mse, list_mae = test(train_loader, mats_state, DIM_H, device)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
-    print(f"[MSE] : \t {mse:.2f}")
-    print(f"[MAE] : \t {mae:.2f}")
+    print(f"[TRAIN] \t MSE : {mse:.2f}")
+    print(f"[TRAIN] \t MAE : {mae:.2f}")
+    print("=======")
+
+    list_mse, list_mae = test(val_loader, mats_state, DIM_H, device)
+    mse = np.array(list_mse).mean()
+    mae = np.array(list_mae).mean()
+    print(f"[VAL] \t MSE : {mse:.2f}")
+    print(f"[VAL] \t MAE : {mae:.2f}")
+    print("=======")
+
+    list_mse, list_mae = test(test_loader, mats_state, DIM_H, device)
+    mse = np.array(list_mse).mean()
+    mae = np.array(list_mae).mean()
+    print(f"[TEST] \t MSE : {mse:.2f}")
+    print(f"[TEST] \t MAE : {mae:.2f}")
+    print("=======")
