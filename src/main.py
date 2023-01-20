@@ -35,16 +35,16 @@ def train_stage_1(dataloader, state, epochs, device, save_path):
 
             Xhat = state.decoder(Hhat).to(device)  # BATCH_SIZE * DIM_C * DIM_T
 
-            D = state.discriminator(X).to(device)  # BATCH_SIZE * 1 * DIM_T2
-            Dhat = state.discriminator(Xhat).to(device)  #  BATCH_SIZE * 1 * DIM_T2
-
             if e % 2 == 0:
                 # (4)
+                Dhat = state.discriminator(Xhat).to(device)  #  BATCH_SIZE * 1 * DIM_T2
                 loss = criterion_edm(Xhat, X, H, state.memory_bank.units, Dhat)
                 loss.backward()
                 state.optim_edm.step()
             else:
                 # (3)
+                D = state.discriminator(X).to(device)  # BATCH_SIZE * 1 * DIM_T2
+                Dhat = state.discriminator(Xhat).to(device)  #  BATCH_SIZE * 1 * DIM_T2
                 loss = criterion_discriminator(Dhat, D)
                 loss.backward()
                 state.optim_discriminator.step()
