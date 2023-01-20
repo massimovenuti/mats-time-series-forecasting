@@ -1,5 +1,6 @@
 from torch import nn
 from torch import autograd
+from torch import linalg
 import torch
 import numpy as np
 
@@ -83,7 +84,6 @@ class Predictor(nn.Module):
         self.decoder = nn.Sequential(nn.Linear(1024, dim_in), nn.Softmax(dim=2))
 
     def forward(self, X, initial_state=None):
-        # no softmax because we use torch.nn.BCELoss
         return self.lstm(X, initial_state)
 
     def decode(self, H):
@@ -93,23 +93,21 @@ class Predictor(nn.Module):
 class MemoryBank(nn.Module):
     def __init__(self, size, dim) -> None:
         super().__init__()
-        units = torch.zeros((dim, size))
-        nn.init.uniform_(units)  # rq: ce n'est pas précisé dans le papier
-        self.units = nn.Parameter(units)
+        self.units = nn.Parameter(torch.randn(dim, size))
+        # rq: Initialisation non précisée dans le papier
+        # units = torch.zeros((dim, size))
+        # nn.init.uniform_(units, -1, 1)
+        # self.units = nn.Parameter(units)
 
     def forward(self, H):
         """
         Measures similarity for each h in H with each m in M.
         """
-        numerator = torch.stack(
-            [
-                torch.exp(
-                    -(torch.linalg.norm(H.transpose(1, 2) - m, dim=2).pow(2))
-                )  # TODO : norm 1 ?
-                for m in self.units.T
-            ],
-            dim=2,
-        )
+        diffs = [
+            torch.exp(-(linalg.norm(H.transpose(1, 2) - m, dim=2).pow(2)))
+            for m in self.units.T
+        ]
+        numerator = torch.stack(diffs, dim=2)
         denominator = torch.sum(numerator, dim=2).unsqueeze(2)
         C = torch.transpose(numerator / denominator, 1, 2)
         return C
@@ -123,6 +121,7 @@ class DiscriminatorLoss(nn.Module):
         super().__init__()
 
     def forward(self, Dhat, D):
+        # TODO : je ne comprends pas l'intérêt des max() vu que D et Dhat sont dans [0,1]
         max_D = torch.maximum(torch.zeros_like(D), 1 - D)
         max_Dhat = torch.maximum(torch.zeros_like(Dhat), 1 + Dhat)
         loss = torch.mean(max_D + max_Dhat)
@@ -139,12 +138,12 @@ class EDMLoss(nn.Module):
 
     def memory_loss(self, H, M):
         norms = torch.stack(
-            [torch.linalg.norm(H.transpose(1, 2) - m, dim=2) for m in M.T],
+            [linalg.norm(H.transpose(1, 2) - m, dim=2, ord=1) for m in M.T],
             dim=2,
         )
         Z = M.T[torch.argmin(norms, dim=2)].transpose(1, 2)
-        diffs = torch.linalg.norm(H.detach() - Z, dim=1).pow(2) + torch.linalg.norm(
-            H - Z.detach(), dim=1
+        diffs = linalg.norm(H.detach() - Z, dim=2).pow(2) + linalg.norm(
+            H - Z.detach(), dim=2
         ).pow(2)
         loss = diffs.sum() / np.prod(H.shape)
         return loss
@@ -156,9 +155,7 @@ class EDMLoss(nn.Module):
         rec_grads = autograd.grad(loss_rec, last_layer, retain_graph=True)[0]
         d_grads = autograd.grad(loss_d, last_layer, retain_graph=True)[0]
 
-        weight = torch.linalg.norm(rec_grads) / (
-            torch.linalg.norm(d_grads) + self.gamma
-        )
+        weight = linalg.norm(rec_grads) / (linalg.norm(d_grads) + self.gamma)
 
         return weight.detach()
 

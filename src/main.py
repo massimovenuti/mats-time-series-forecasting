@@ -19,7 +19,8 @@ def train_stage_1(dataloader, state, epochs, device, save_path):
     criterion_edm = mats.EDMLoss(state.decoder)
     criterion_discriminator = mats.DiscriminatorLoss()
 
-    iteration = 0
+    iteration = state.stage_1_iteration
+
     for epoch in range(state.stage_1_epoch, epochs):
         for e, (X, _) in enumerate(dataloader):
             state.optim_edm.zero_grad()
@@ -58,10 +59,11 @@ def train_stage_1(dataloader, state, epochs, device, save_path):
                 )
 
             iteration = iteration + 1
-            state.stage_1_iteration = iteration
+
+        state.stage_1_iteration = iteration
+        state.stage_1_epoch = epoch + 1
 
         with save_path.open("wb") as fp:
-            state.stage_1_epoch = epoch + 1
             torch.save(state, fp)
 
 
@@ -74,7 +76,8 @@ def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
 
     criterion_predictor = nn.BCELoss()
 
-    iteration = 0
+    iteration = state.stage_2_iteration
+
     for epoch in range(state.stage_2_epoch, epochs):
         for e, (X, y) in enumerate(dataloader):
             state.optim_predictor.zero_grad()
@@ -90,6 +93,8 @@ def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
             dim_t2 = C.shape[2]
             dim_h2 = np.ceil(dim_t2 * dim_h / dim_t).astype(int)
 
+            # TODO : should we do teacher forcing only ?
+            # See Curriculum Learning
             # LSTM waits dim L * N * H_in
             C = C.movedim((0, 1, 2), (1, 2, 0))  # DIM_T2 * BATCH_SIZE * DIM_M
             # DIM_T2 * BATCH_SIZE * DIM_M
@@ -130,9 +135,10 @@ def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
                 print(f"[{epoch}/{epochs}][{e}/{len(dataloader)}]\t Loss : {loss:.2f}")
 
             iteration = iteration + 1
-            state.stage_2_iteration = iteration
 
+        state.stage_2_iteration = iteration
         state.stage_2_epoch = epoch + 1
+
         with save_path.open("wb") as fp:
             torch.save(state, fp)
 
@@ -209,8 +215,8 @@ def test(loader, state, dim_h, device):
 
 BATCH_SIZE = 64
 # BATCH_SIZE = 99  # Just for tests to distinguish
-DIM_T = 192  # Longeur d'une serie chronologique stage 1
-DIM_TT = 96  # Longeur d'une serie chronologique stage 2
+DIM_T_1 = 192  # Longeur d'une serie chronologique stage 1
+DIM_T_2 = 96  # Longeur d'une serie chronologique stage 2
 # DIM_H = [96, 192, 336, 720]  # Nombre de valeur à prédire pour une serie chronologique
 DIM_H = 96  # Nombre de valeur à prédire pour une serie chronologique
 DIM_E = 64  # Nombre de variable d'une serie chronologique apres encodeur ( taille couche sortie encodeur)
@@ -222,24 +228,35 @@ STATES_DIR = "states/"
 
 if __name__ == "__main__":
     # stage 1
-    train_dataset, val_dataset, test_dataset = datasets.load_ld_dataset(
-        "data/LD2011_2014/LD2011_2014.txt"
+    train_dataset_1, _, _ = datasets.load_ld_dataset(
+        "data/LD2011_2014/LD2011_2014.txt", dim_t=DIM_T_1
     )
 
-    train_loader = DataLoader(
-        train_dataset,
+    train_loader_1 = DataLoader(
+        train_dataset_1,
         batch_size=BATCH_SIZE,
         shuffle=True,
     )
 
-    val_loader = DataLoader(
-        val_dataset,
+    # stage 2
+    train_dataset_2, val_dataset_2, test_dataset_2 = datasets.load_ld_dataset(
+        "data/LD2011_2014/LD2011_2014.txt", dim_t=DIM_T_2
+    )
+
+    train_loader_2 = DataLoader(
+        train_dataset_2,
         batch_size=BATCH_SIZE,
         shuffle=True,
     )
 
-    test_loader = DataLoader(
-        test_dataset,
+    val_loader_2 = DataLoader(
+        val_dataset_2,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+    )
+
+    test_loader_2 = DataLoader(
+        test_dataset_2,
         batch_size=BATCH_SIZE,
         shuffle=True,
     )
@@ -253,7 +270,7 @@ if __name__ == "__main__":
             mats_state = torch.load(fp)
     else:
         # Nombre de variables
-        dim_c = train_dataset.data.shape[1]
+        dim_c = train_dataset_1.data.shape[1]
 
         encoder = mats.Encoder(dim_c).to(device)
         decoder = mats.Decoder(dim_c).to(device)
@@ -282,7 +299,7 @@ if __name__ == "__main__":
         )
 
     train_stage_1(
-        train_loader,
+        train_loader_1,
         mats_state,
         epochs=1000,
         device=device,
@@ -301,24 +318,29 @@ if __name__ == "__main__":
             param.requires_grad = False
 
     train_stage_2(
-        train_loader, mats_state, DIM_H, epochs=500, device=device, save_path=save_path
+        train_loader_2,
+        mats_state,
+        DIM_H,
+        epochs=500,
+        device=device,
+        save_path=save_path,
     )
 
-    list_mse, list_mae = test(train_loader, mats_state, DIM_H, device)
+    list_mse, list_mae = test(train_loader_2, mats_state, DIM_H, device)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[TRAIN] \t MSE : {mse:.2f}")
     print(f"[TRAIN] \t MAE : {mae:.2f}")
     print("=======")
 
-    list_mse, list_mae = test(val_loader, mats_state, DIM_H, device)
+    list_mse, list_mae = test(val_loader_2, mats_state, DIM_H, device)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[VAL] \t MSE : {mse:.2f}")
     print(f"[VAL] \t MAE : {mae:.2f}")
     print("=======")
 
-    list_mse, list_mae = test(test_loader, mats_state, DIM_H, device)
+    list_mse, list_mae = test(test_loader_2, mats_state, DIM_H, device)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[TEST] \t MSE : {mse:.2f}")
