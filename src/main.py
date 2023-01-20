@@ -26,17 +26,17 @@ def train_stage_1(dataloader, state, epochs, device, save_path):
             state.optim_edm.zero_grad()
             state.optim_discriminator.zero_grad()
 
-            X = torch.movedim(X, 1, 2).to(device)  # BATCH_SIZE X DIM_C X DIM_T
-            H = state.encoder(X).to(device)  # BATCH_SIZE X DIM_D X DIM_T2
+            X = torch.movedim(X, 1, 2).to(device)  # BATCH_SIZE * DIM_C * DIM_T
+            H = state.encoder(X).to(device)  # BATCH_SIZE * DIM_D * DIM_T2
             C = state.memory_bank(H).to(device)  # BATCH_SIZE * DIM_M * DIM_T2
 
             # BATCH_SIZE X DIM_D X DIM_T2
             Hhat = state.memory_bank.reconstruct(C).to(device)
 
-            Xhat = state.decoder(Hhat).to(device)  # BATCH_SIZE X DIM_C X DIM_T
+            Xhat = state.decoder(Hhat).to(device)  # BATCH_SIZE * DIM_C * DIM_T
 
-            D = state.discriminator(X).to(device)  # BATCH_SIZE X DIM_D X DIM_T2
-            Dhat = state.discriminator(Xhat).to(device)  #  BATCH_SIZE X DIM_D X DIM_T2
+            D = state.discriminator(X).to(device)  # BATCH_SIZE * 1 * DIM_T2
+            Dhat = state.discriminator(Xhat).to(device)  #  BATCH_SIZE * 1 * DIM_T2
 
             if e % 2 == 0:
                 # (4)
