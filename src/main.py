@@ -6,9 +6,14 @@ from tqdm import tqdm
 from torch import nn
 import numpy as np
 from pathlib import Path
+from torch.utils import tensorboard as tb
+import time
+from tqdm import tqdm
 
 
-def train_stage_1(dataloader, state, epochs, device, save_path):
+def train_stage_1(
+    dataloader, state, epochs, device, save_path, writer: tb.SummaryWriter
+):
 
     state.encoder.train()
     state.decoder.train()
@@ -21,7 +26,8 @@ def train_stage_1(dataloader, state, epochs, device, save_path):
 
     iteration = state.stage_1_iteration
 
-    for epoch in range(state.stage_1_epoch, epochs):
+    pbar = tqdm(range(state.stage_1_epoch, epochs), leave=False)
+    for epoch in pbar:
         for e, (X, _) in enumerate(dataloader):
             state.optim_edm.zero_grad()
             state.optim_discriminator.zero_grad()
@@ -38,24 +44,34 @@ def train_stage_1(dataloader, state, epochs, device, save_path):
             if e % 2 == 0:
                 # (4)
                 Dhat = state.discriminator(Xhat).to(device)  #  BATCH_SIZE * 1 * DIM_T2
-                loss = criterion_edm(Xhat, X, H, state.memory_bank.units, Dhat)
-                loss.backward()
+                edm_loss, (loss_rec, loss_m, loss_d, lmbda) = criterion_edm(
+                    Xhat, X, H, state.memory_bank.units, Dhat
+                )
+                edm_loss.backward()
                 state.optim_edm.step()
+                writer.add_scalar("Stage_1/EDM/Loss", edm_loss, iteration)
+                writer.add_scalar("Stage_1/EDM/Loss_rec", loss_rec, iteration)
+                writer.add_scalar("Stage_1/EDM/Loss_m", loss_m, iteration)
+                writer.add_scalar("Stage_1/EDM/Loss_d", loss_d, iteration)
+                writer.add_scalar("Stage_1/EDM/Lambda", lmbda, iteration)
             else:
                 # (3)
                 D = state.discriminator(X).to(device)  # BATCH_SIZE * 1 * DIM_T2
                 Dhat = state.discriminator(Xhat).to(device)  #  BATCH_SIZE * 1 * DIM_T2
-                loss = criterion_discriminator(Dhat, D)
-                loss.backward()
+                d_loss = criterion_discriminator(Dhat, D)
+                d_loss.backward()
                 state.optim_discriminator.step()
+                writer.add_scalar("Stage_1/Disc/Loss", d_loss, iteration)
 
-            # TODO : use tensorboard
-            if e % 20 == 0 or e % 20 == 1:
-                print(
-                    f"[STAGE 1]"
-                    f"[{epoch}/{epochs}][{e}/{len(dataloader)}]"
-                    f"[{'EDM' if e%2 == 0 else 'D'}]\t"
-                    f"Loss : {loss:.2f}"
+            if e % 50 == 1:
+                pbar.set_description(
+                    f"[STAGE 1]" f"[{epoch}/{epochs}][{e}/{len(dataloader)}]"
+                )
+                pbar.set_postfix(
+                    {
+                        "EDM_loss": round(edm_loss.item(), 2),
+                        "D_loss": round(d_loss.item(), 2),
+                    }
                 )
 
             iteration = iteration + 1
@@ -67,7 +83,9 @@ def train_stage_1(dataloader, state, epochs, device, save_path):
             torch.save(state, fp)
 
 
-def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
+def train_stage_2(
+    dataloader, state, dim_h, epochs, device, save_path, writer: tb.SummaryWriter
+):
     state.encoder.train()
     state.decoder.train()
     state.memory_bank.train()
@@ -78,7 +96,8 @@ def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
 
     iteration = state.stage_2_iteration
 
-    for epoch in range(state.stage_2_epoch, epochs):
+    pbar = tqdm(range(state.stage_2_epoch, epochs), leave=False)
+    for epoch in pbar:
         for e, (X, y) in enumerate(dataloader):
             state.optim_predictor.zero_grad()
 
@@ -130,9 +149,17 @@ def train_stage_2(dataloader, state, dim_h, epochs, device, save_path):
             loss.backward()
             state.optim_predictor.step()
 
-            # TODO : use tensorboard
-            if e % 20 == 0:
-                print(f"[{epoch}/{epochs}][{e}/{len(dataloader)}]\t Loss : {loss:.2f}")
+            writer.add_scalar("Stage_2/Loss", loss, iteration)
+
+            if e % 50 == 0:
+                pbar.set_description(
+                    f"[STAGE 2][{epoch}/{epochs}][{e}/{len(dataloader)}]"
+                )
+                pbar.set_postfix(
+                    {
+                        "loss": round(loss.item(), 2),
+                    }
+                )
 
             iteration = iteration + 1
 
@@ -227,9 +254,13 @@ STATES_DIR = "states/"
 
 
 if __name__ == "__main__":
+    writer = tb.SummaryWriter(f"runs/mats-{time.asctime()}")
+
     # stage 1
     train_dataset_1, _, _ = datasets.load_ld_dataset(
-        "data/LD2011_2014/LD2011_2014.txt", dim_t=DIM_T_1
+        "data/LD2011_2014/LD2011_2014.txt",
+        dim_t=DIM_T_1,
+        cache_dir="data/.cache/ld1/",
     )
 
     train_loader_1 = DataLoader(
@@ -240,7 +271,9 @@ if __name__ == "__main__":
 
     # stage 2
     train_dataset_2, val_dataset_2, test_dataset_2 = datasets.load_ld_dataset(
-        "data/LD2011_2014/LD2011_2014.txt", dim_t=DIM_T_2
+        "data/LD2011_2014/LD2011_2014.txt",
+        dim_t=DIM_T_2,
+        cache_dir="data/.cache/ld2/",
     )
 
     train_loader_2 = DataLoader(
@@ -304,6 +337,7 @@ if __name__ == "__main__":
         epochs=1000,
         device=device,
         save_path=save_path,
+        writer=writer,
     )
 
     # freeze stage 1 models
@@ -324,6 +358,7 @@ if __name__ == "__main__":
         epochs=500,
         device=device,
         save_path=save_path,
+        writer=writer,
     )
 
     list_mse, list_mae = test(train_loader_2, mats_state, DIM_H, device)

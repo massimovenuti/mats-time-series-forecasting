@@ -2,6 +2,8 @@ from torch.utils import data
 import pandas as pd
 import numpy as np
 from sklearn import preprocessing
+import pathlib
+import torch
 
 
 def train_val_test_split(data, train_proportion, val_proportion, normalize):
@@ -51,9 +53,44 @@ def data_filter_client(df, number_client=320):
     return df.iloc[:, list(set_index_client)]
 
 
+def load_cached_datasets(cache_dir, prefix):
+    cache_dir_path = pathlib.Path(cache_dir)
+
+    if not cache_dir_path.is_dir():
+        return None
+
+    try:
+        train_dataset = torch.load(pathlib.Path(cache_dir_path, f"{prefix}.train.pkl"))
+        val_dataset = torch.load(pathlib.Path(cache_dir_path, f"{prefix}.val.pkl"))
+        test_dataset = torch.load(pathlib.Path(cache_dir_path, f"{prefix}.test.pkl"))
+    except:
+        return None
+
+    return train_dataset, val_dataset, test_dataset
+
+
+def cache_dataset(cache_dir, prefix, train_dataset, val_dataset, test_dataset):
+    cache_dir_path = pathlib.Path(cache_dir)
+    cache_dir_path.mkdir(parents=True, exist_ok=True)
+    torch.save(train_dataset, pathlib.Path(cache_dir, f"{prefix}.train.pkl"))
+    torch.save(val_dataset, pathlib.Path(cache_dir, f"{prefix}.val.pkl"))
+    torch.save(test_dataset, pathlib.Path(cache_dir, f"{prefix}.test.pkl"))
+
+
 def load_ld_dataset(
-    path, train_proportion=0.7, val_proportion=0.1, normalize=True, dim_t=192, dim_h=96
+    path,
+    train_proportion=0.7,
+    val_proportion=0.1,
+    normalize=True,
+    dim_t=192,
+    dim_h=96,
+    cache_dir=None,
 ):
+    if cache_dir is not None:
+        datasets = load_cached_datasets(cache_dir, "ld")
+        if datasets != None:
+            return datasets
+
     data = pd.read_csv(path, decimal=",", sep=";")
     data = data_to_hour(data)
     data = data_filter_client(data)
@@ -67,17 +104,21 @@ def load_ld_dataset(
     val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
     test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
 
+    if cache_dir is not None:
+        cache_dataset(cache_dir, "ld", train_dataset, val_dataset, test_dataset)
+
     return train_dataset, val_dataset, test_dataset
+
 
 # Electricity dataset management
 def load_elec_dataset(
-    path="../data/Electricity/LD2011_2014.txt", 
-    train_proportion=0.7, 
-    val_proportion=0.1, 
-    normalize=True, 
-    dim_t=192, 
+    path="../data/Electricity/LD2011_2014.txt",
+    train_proportion=0.7,
+    val_proportion=0.1,
+    normalize=True,
+    dim_t=192,
     dim_h=96,
-    showShape=False
+    showShape=False,
 ):
     """path: path to the file containing the Electricity data (by default "../data/Electricity/LD2011_2014.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
@@ -93,10 +134,10 @@ def load_elec_dataset(
     data = data_to_hour(data)
     data = data_filter_client(data)
     data = data.drop(columns=data.columns[0], axis=1)
-    # Idea - Adding a total value column otherwise the number of columns 
+    # Idea - Adding a total value column otherwise the number of columns
     # doesn't match the paper values (320 against 321)
 
-    if (showShape):
+    if showShape:
         print("Elec shape :", data.shape)
         return
 
@@ -111,6 +152,7 @@ def load_elec_dataset(
     # Returning the split
     return train_dataset, val_dataset, test_dataset
 
+
 # ETT dataset management
 def load_ETT_dataset(
     path="../data/ETT/ETT",
@@ -120,7 +162,7 @@ def load_ETT_dataset(
     normalize=True,
     dim_t=192,
     dim_h=96,
-    showShape=False
+    showShape=False,
 ):
     """path: path to the file containing the ETT data (by default "../data/ETT/ETT*")
     \nWarning - Do not specify the file ending in the path ('*h1.txt' for example)
@@ -142,7 +184,7 @@ def load_ETT_dataset(
     data = pd.read_csv(path)
     data = data.select_dtypes([np.number])  # Removing non-numeric columns
 
-    if (showShape) :
+    if showShape:
         print("ETT", choice, "shape :", data.shape)
         return
 
@@ -166,7 +208,7 @@ def load_exchange_dataset(
     normalize=True,
     dim_t=192,
     dim_h=96,
-    showShape=False
+    showShape=False,
 ):
     """path: path to the file containing the Exchange data (by default "../data/Exchange/exchange_rate.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
@@ -181,7 +223,7 @@ def load_exchange_dataset(
     data = pd.read_csv(path, decimal=".", sep=",", header=None)
     data = data.select_dtypes([np.number])  # Removing non-numeric columns
 
-    if (showShape) :
+    if showShape:
         print("Exchange shape :", data.shape)
         return
 
@@ -205,7 +247,7 @@ def load_ILI_dataset(
     normalize=True,
     dim_t=60,
     dim_h=24,
-    showShape=False
+    showShape=False,
 ):
     """path: path to the file containing the ILI data (by default "../data/ILI/ILINet.csv")
     \ntrain_proportion: proportion of values for the training set (by default 0.6)
@@ -218,21 +260,26 @@ def load_ILI_dataset(
 
     # CSV file into pandas conversion and cleaning
     data = pd.read_csv(path)
-    data.drop(['YEAR', 'WEEK', 'REGION TYPE', 'REGION', '% WEIGHTED ILI', '%UNWEIGHTED ILI'], inplace=True, axis=1) # Removing percentage data and timestamps
+    data.drop(
+        ["YEAR", "WEEK", "REGION TYPE", "REGION", "% WEIGHTED ILI", "%UNWEIGHTED ILI"],
+        inplace=True,
+        axis=1,
+    )  # Removing percentage data and timestamps
     # Need to compute missing AGE 25-64 from AGE 25-49 and AGE 50-64
     # Missing values are represented by 'X'
     def compute_total(d):
-        if d['AGE 25-64'] == "X":
-            return int(d['AGE 25-49']) + int(d['AGE 50-64'])
-        return int(d['AGE 25-64'])
-    data['AGE 25-64'] = data.apply(compute_total, axis=1)
+        if d["AGE 25-64"] == "X":
+            return int(d["AGE 25-49"]) + int(d["AGE 50-64"])
+        return int(d["AGE 25-64"])
+
+    data["AGE 25-64"] = data.apply(compute_total, axis=1)
     # We remove the useless columns to only keep 7 like shown in the paper
     # AGE 25-49 and AGE 50-64 are useless if we have AGE 25-64
-    data.drop(['AGE 25-49', 'AGE 50-64'], inplace=True, axis=1)
+    data.drop(["AGE 25-49", "AGE 50-64"], inplace=True, axis=1)
     # We remove the last 26 lines of the dataset to match the expected number of lines from the paper
     data.drop(data.tail(26).index, inplace=True)
 
-    if (showShape) :
+    if showShape:
         print("ILI shape :", data.shape)
         return
 
@@ -256,7 +303,7 @@ def load_traffic_dataset(
     normalize=True,
     dim_t=192,
     dim_h=96,
-    showShape=False
+    showShape=False,
 ):
     """path: path to the file containing the Traffic data (by default "../data/Traffic/traffic-5-years.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
@@ -270,11 +317,11 @@ def load_traffic_dataset(
     # CSV file into pandas conversion and cleaning
     data = pd.read_csv(path, header=None, decimal=".", sep=",")
     # Need to remove the timestamp to only keep numeric values
-    data[0] = data[0].map(lambda x: float(x.split(':')[2]))
+    data[0] = data[0].map(lambda x: float(x.split(":")[2]))
     data = data.select_dtypes([np.number])  # Removing non-numeric columns
-    data = data.T # Need to transpose the dataframe, otherwise incorrect data shape
+    data = data.T  # Need to transpose the dataframe, otherwise incorrect data shape
 
-    if (showShape) :
+    if showShape:
         print("Traffic shape :", data.shape)
         return
 
@@ -298,7 +345,7 @@ def load_weather_dataset(
     normalize=True,
     dim_t=192,
     dim_h=96,
-    showShape=False
+    showShape=False,
 ):
     """path: path to the file containing the Weather data (by default "../data/Weather/mpi_roof_2020.csv")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
@@ -313,7 +360,7 @@ def load_weather_dataset(
     data = pd.read_csv(path)
     data = data.select_dtypes([np.number])
 
-    if (showShape) :
+    if showShape:
         print("Weather shape :", data.shape)
         return
 
@@ -342,6 +389,7 @@ class TimeSeriesDataset(data.Dataset):
         X = self.data[indice : indice + self.dim_t]
         y = self.data[indice + self.dim_t : indice + self.dim_t + self.dim_h]
         return X, y
+
 
 # Dataset shapes confirmation
 if __name__ == "__main__":

@@ -120,6 +120,7 @@ class DiscriminatorLoss(nn.Module):
 
     def forward(self, Dhat, D):
         # TODO : je ne comprends pas l'intérêt des max() vu que D et Dhat sont dans [0,1]
+        # TODO: peut être qu'il faut utiliser Tanh en sortie du discrim au lieu de sigmoid
         max_D = torch.maximum(torch.zeros_like(D), 1 - D)
         max_Dhat = torch.maximum(torch.zeros_like(Dhat), 1 + Dhat)
         loss = torch.mean(max_D + max_Dhat)
@@ -129,6 +130,7 @@ class DiscriminatorLoss(nn.Module):
 class EDMLoss(nn.Module):
     def __init__(self, decoder, alpha=1.0, gamma=1e-6) -> None:
         super().__init__()
+        # TODO : gamma = 1e-4 ? C.f github de VQGAN
         self.reconstruction_loss = nn.MSELoss()
         self.decoder_last_layer = decoder.network[-1].weight
         self.alpha = alpha
@@ -155,6 +157,8 @@ class EDMLoss(nn.Module):
 
         weight = linalg.norm(rec_grads) / (linalg.norm(d_grads) + self.gamma)
 
+        # TODO: torch.clamp ? C.f github de VQGAN
+
         return weight.detach()
 
     def forward(self, Xhat, X, H, M, Dhat):
@@ -164,7 +168,12 @@ class EDMLoss(nn.Module):
 
         lmbda = self.calc_adaptive_weight(loss_rec, loss_d, self.decoder_last_layer)
 
-        return loss_rec + self.alpha * loss_m + lmbda * loss_d
+        return loss_rec + self.alpha * loss_m + lmbda * loss_d, (
+            loss_rec,
+            loss_m,
+            loss_d,
+            lmbda,
+        )
 
 
 class State:
