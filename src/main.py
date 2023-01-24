@@ -335,14 +335,14 @@ if __name__ == "__main__":
             optim_predictor,
         )
 
-    # train_stage_1(
-    #     train_loader_1,
-    #     mats_state,
-    #     epochs=1000,
-    #     device=device,
-    #     save_path=save_path,
-    #     writer=writer,
-    # )
+    train_stage_1(
+        train_loader_1,
+        mats_state,
+        epochs=1000,
+        device=device,
+        save_path=save_path,
+        writer=writer,
+    )
 
     # freeze stage 1 models
     list_models = [
