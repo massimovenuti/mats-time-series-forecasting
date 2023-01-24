@@ -55,8 +55,8 @@ if __name__ == "__main__":
     model.fit(
         dataloader_1=train_loader_1,
         dataloader_2=train_loader_2,
-        epochs_s1=1000,
-        epochs_s2=500,
+        epochs_1=1000,
+        epochs_2=500,
         save_path=save_path,
         writer=writer,
         device=device,
