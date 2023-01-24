@@ -4,6 +4,7 @@ from torch import linalg
 import torch
 import numpy as np
 from torch.nn import functional as F
+from tqdm import tqdm
 
 
 class Encoder(nn.Module):
@@ -81,13 +82,34 @@ class Predictor(nn.Module):
             num_layers=2,
             dropout=0.5,
         )
-        self.decoder = nn.Sequential(nn.Linear(1024, dim_in), nn.Softmax(dim=2))
+        self.decode = nn.Sequential(nn.Linear(1024, dim_in), nn.Softmax(dim=2))
 
-    def forward(self, X, initial_state=None):
-        return self.lstm(X, initial_state)
+    def forward(self, X, horizon):
+        # X : BATCH_SIZE * DIM_M * DIM_T2
+        # LSTM waits dim L * N * H_in
+        X = X.movedim((0, 1, 2), (1, 2, 0))  # DIM_T2 * BATCH_SIZE * DIM_M
 
-    def decode(self, H):
-        return self.decoder(H)
+        # TODO : should we do teacher forcing only ?
+        # See Curriculum Learning
+        pred_output, (last_hidden, last_cell) = self.lstm(X)
+        prediction = self.decode(pred_output)  # DIM_T2 * BATCH_SIZE * DIM_M
+
+        all_predictions = [prediction]
+
+        for _ in range(horizon):
+            pred_output, (last_hidden, last_cell) = self.lstm(
+                prediction[-1].unsqueeze(0), (last_hidden, last_cell)
+            )
+            prediction = self.decode(pred_output)
+            all_predictions.append(prediction)
+
+        # (DIM_T2 + DIM_H2) * BATCH_SIZE * DIM_M
+        preds = torch.vstack(all_predictions)
+
+        # BATCH_SIZE * DIM_M * (DIM_T2 + DIM_H2)
+        preds = preds.movedim((0, 1, 2), (2, 0, 1))
+
+        return preds
 
 
 class MemoryBank(nn.Module):
@@ -125,7 +147,7 @@ class DiscriminatorLoss(nn.Module):
         loss_D = torch.mean(F.relu(1.0 - D))
         loss_Dhat = torch.mean(F.relu(1.0 + Dhat))
         loss = self.weight * 0.5 * (loss_D + loss_Dhat)
-        return loss
+        return loss, (loss_D, loss_Dhat)
 
     # def forward(self, Dhat, D):
     #     # TODO : je ne comprends pas l'intérêt des max() vu que D et Dhat sont dans [0,1]
@@ -189,26 +211,197 @@ class EDMLoss(nn.Module):
 
 
 class State:
-    def __init__(
+    def __init__(self) -> None:
+        self.epoch = 0
+        self.iteration = 0
+
+
+class MATS(nn.Module):
+    def __init__(self, dim_c, size_m, dim_e) -> None:
+        super().__init__()
+        self.encoder = Encoder(dim_c)
+        self.decoder = Decoder(dim_c)
+        self.memory_bank = MemoryBank(size_m, dim_e)
+        self.discriminator = Discriminator(dim_c)
+        self.predictor = Predictor(size_m)
+
+        self.optim_edm = torch.optim.Adam(
+            list(self.encoder.parameters())
+            + list(self.decoder.parameters())
+            + list(self.memory_bank.parameters()),
+            lr=0.0001,
+        )
+        self.optim_discriminator = torch.optim.Adam(
+            self.discriminator.parameters(), lr=0.0001
+        )
+        self.optim_predictor = torch.optim.AdamW(self.predictor.parameters(), lr=0.0001)
+
+        self.state_1 = State()
+        self.state_2 = State()
+
+    def encode(self, X):
+        X = torch.movedim(X, 1, 2)  # BATCH_SIZE * DIM_C * DIM_T
+        H = self.encoder(X)  # BATCH_SIZE * DIM_D * DIM_T2
+        C = self.memory_bank(H)  # BATCH_SIZE * DIM_M * DIM_T2
+        return C, H
+
+    def decode(self, C):
+        Hhat = self.memory_bank.reconstruct(C)  # BATCH_SIZE * DIM_D * DIM_T2
+        Xhat = self.decoder(Hhat)  # BATCH_SIZE * DIM_C * DIM_T
+        return Xhat
+
+    def get_dim_h2(self, dim_t, dim_t2, horizon):
+        return np.ceil(dim_t2 * horizon / dim_t).astype(int)
+
+    def predict(self, X, horizon):
+        C, _ = self.encode(X)  # BATCH_SIZE * DIM_M * DIM_T2
+        dim_h2 = self.get_dim_h2(X.shape[1], C.shape[2], horizon)
+        Chat = self.predictor(C, dim_h2)  # BATCH_SIZE * DIM_M * DIM_T2
+        Xhat = self.decode(Chat).movedim(1, 2)  # BATCH_SIZE * DIM_T * DIM_C
+        Xpred = Xhat[:, -horizon:, :]  # BATCH_SIZE * DIM_H * DIM_C
+        return Xpred
+
+    def step_stage_1(self, X, optim_index, lmbda=None):
+        criterion_edm = EDMLoss(self.decoder)
+        criterion_discriminator = DiscriminatorLoss()
+
+        self.optim_edm.zero_grad()
+        self.optim_discriminator.zero_grad()
+
+        C, H = self.encode(X)  # C : BATCH_SIZE * DIM_M * DIM_T2
+        Xhat = self.decode(C)  # BATCH_SIZE * DIM_C * DIM_T
+        X = X.movedim(1, 2)  # BATCH_SIZE * DIM_C * DIM_T
+
+        if optim_index == 0:
+            # (4)
+            Dhat = self.discriminator(Xhat)  #  BATCH_SIZE * 1 * DIM_T2
+            loss, partial_losses = criterion_edm(
+                Xhat, X, H, self.memory_bank.units, Dhat, lmbda
+            )
+            loss.backward()
+            self.optim_edm.step()
+        else:
+            # (3)
+            D = self.discriminator(X.detach())  # BATCH_SIZE * 1 * DIM_T2
+            Dhat = self.discriminator(Xhat.detach())  #  BATCH_SIZE * 1 * DIM_T2
+            d_loss = criterion_discriminator(Dhat, D)
+            d_loss.backward()
+            self.optim_discriminator.step()
+
+        return loss, partial_losses
+
+    def step_stage_2(self, X, y):
+        criterion_predictor = nn.BCELoss()
+        self.optim_predictor.zero_grad()
+
+        C, _ = self.encode(X)  # BATCH_SIZE * DIM_M * DIM_T2
+        dim_h2 = self.get_dim_h2(X.shape[1], C.shape[2], y.shape[1])
+        # BATCH_SIZE * DIM_M * (DIM_T2 + DIM_H2)
+        Chat = self.predictor(C, dim_h2)  # BATCH_SIZE * DIM_M * DIM_T2
+
+        # (6)
+        X_gt = torch.cat((X, y), dim=1)  # BATCH_SIZE * (DIM_T + DIM_H) * DIM_C
+        C_gt, _ = self.encode(X_gt)  # BATCH_SIZE * DIM_M * (DIM_T2 + DIM_H2)
+
+        # (7)
+        loss = criterion_predictor(Chat, C_gt)
+        loss.backward()
+        self.optim_predictor.step()
+
+        return loss
+
+    def train_stage_1(
+        self, dataloader, epochs, save_path, writer, device="cpu", disc_start=10000
+    ):
+        # stage 1
+        iteration = self.state_1.iteration
+        pbar = tqdm(range(self.state_1.epoch, epochs), leave=False)
+        for epoch in pbar:
+            for X, _ in dataloader:
+                X = X.to(device)
+                optim_index = 0 if iteration < disc_start or iteration % 2 == 0 else 1
+                lmbda = None if iteration > disc_start else 0
+
+                loss, partial_losses = self.step_stage_1(X, optim_index, lmbda)
+
+                if optim_index == 0:
+                    loss_rec, loss_m, loss_d, lmbda = partial_losses
+                    writer.add_scalars("Loss_S1", {"edm": loss}, iteration)
+                    writer.add_scalars(
+                        "EDM_partial_losses",
+                        {"loss_rec": loss_rec, "loss_m": loss_m, "loss_d": loss_d},
+                        iteration,
+                    )
+                    writer.add_scalar("Lambda", lmbda, iteration)
+                else:
+                    writer.add_scalars("Loss_S1", {"discriminator": loss}, iteration)
+
+                iteration = iteration + 1
+
+            self.state_1.iteration = iteration
+            self.state_1.epoch = epoch + 1
+
+            with save_path.open("wb") as fp:
+                torch.save(self, fp)
+
+    def train_stage_2(self, dataloader, epochs, save_path, writer, device="cpu"):
+        iteration = self.state_2.iteration
+        pbar = tqdm(range(self.state_2.epoch, epochs), leave=False)
+        for epoch in pbar:
+            for X, y in dataloader:
+                X = X.to(device)
+                y = y.to(device)
+                loss = self.step_stage_2(X, y)
+                writer.add_scalar("Loss_S2", loss, iteration)
+                iteration = iteration + 1
+
+            self.state_2.iteration = iteration
+            self.state_2.epoch = epoch + 1
+
+            with save_path.open("wb") as fp:
+                torch.save(self, fp)
+
+    def fit(
         self,
-        encoder,
-        decoder,
-        memory_bank,
-        discriminator,
-        predictor,
-        optim_edm,
-        optim_discriminator,
-        optim_predictor,
-    ) -> None:
-        self.encoder = encoder
-        self.decoder = decoder
-        self.memory_bank = memory_bank
-        self.discriminator = discriminator
-        self.predictor = predictor
-        self.optim_edm = optim_edm
-        self.optim_discriminator = optim_discriminator
-        self.optim_predictor = optim_predictor
-        self.stage_1_epoch = 0
-        self.stage_1_iteration = 0
-        self.stage_2_epoch = 0
-        self.stage_2_iteration = 0
+        dataloader,
+        epochs_s1,
+        epochs_s2,
+        save_path,
+        writer,
+        device="cpu",
+    ):
+        self.train()
+        self.train_stage_1(dataloader, epochs_s1, save_path, writer, device)
+
+        # freeze stage 1
+        list_models = [
+            self.encoder,
+            self.decoder,
+            self.discriminator,
+            self.memory_bank,
+        ]
+        for model in list_models:
+            for param in model.parameters():
+                param.requires_grad = False
+
+        self.train_stage_2(dataloader, epochs_s2, save_path, writer, device)
+
+    @torch.no_grad()
+    def test(self, dataloader, device="cpu"):
+        self.eval()
+        list_mse = []
+        list_mae = []
+
+        for X, y in tqdm(dataloader):
+            X = X.to(device)
+            y = y.to(device)
+            Xpred = self.predict(X, horizon=y.shape[1])
+            mse = F.mse_loss(Xpred, y, reduction="mean")
+            mae = F.l1_loss(Xpred, y, reduction="mean")
+            list_mse.append(mse.cpu())
+            list_mae.append(mae.cpu())
+
+        return list_mse, list_mae
+
+    def forward(self, X):
+        return self.predict(X)

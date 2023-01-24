@@ -77,47 +77,75 @@ def cache_dataset(cache_dir, prefix, train_dataset, val_dataset, test_dataset):
     torch.save(test_dataset, pathlib.Path(cache_dir, f"{prefix}.test.pkl"))
 
 
-def load_ld_dataset(
+def get_loaders(
+    dataset,
     path,
+    cache_dir=None,
+    batch_size=64,
     train_proportion=0.7,
     val_proportion=0.1,
-    normalize=True,
     dim_t=192,
     dim_h=96,
-    cache_dir=None,
+    normalize=True,
 ):
-    if cache_dir is not None:
-        datasets = load_cached_datasets(cache_dir, "ld")
-        if datasets != None:
-            return datasets
+    # if cache_dir is not None:
+    #     datasets = load_cached_datasets(cache_dir, "ld")
+    #     if datasets != None:
+    #         return datasets
 
-    data = pd.read_csv(path, decimal=",", sep=";")
-    data = data_to_hour(data)
-    data = data_filter_client(data)
-    data = data.drop(columns=data.columns[0], axis=1)
+    datasets = ["electricity", "exchange", "ett", "ili", "traffic", "weather"]
+    assert dataset in datasets
 
-    data_train, data_val, data_test = train_val_test_split(
-        data, train_proportion, val_proportion, normalize
+    load_fonctions = [
+        load_elec_dataset,
+        load_exchange_dataset,
+        load_ETT_dataset,
+        load_ILI_dataset,
+        load_traffic_dataset,
+        load_weather_dataset,
+    ]
+
+    dataset_index = datasets.index(dataset)
+    load_fn = load_fonctions[dataset_index]
+
+    df = load_fn(path)
+
+    # Dataset split
+    df_train, df_val, df_test = train_val_test_split(
+        df, train_proportion, val_proportion, normalize
     )
 
-    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
-    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
-    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
+    train_dataset = TimeSeriesDataset(df_train, dim_t, dim_h)
+    val_dataset = TimeSeriesDataset(df_val, dim_t, dim_h)
+    test_dataset = TimeSeriesDataset(df_test, dim_t, dim_h)
 
-    if cache_dir is not None:
-        cache_dataset(cache_dir, "ld", train_dataset, val_dataset, test_dataset)
+    # if cache_dir is not None:
+    #     cache_dataset(cache_dir, "ld", train_dataset, val_dataset, test_dataset)
 
-    return train_dataset, val_dataset, test_dataset
+    train_loader = data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+    )
+
+    val_loader = data.DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+    )
+
+    test_loader = data.DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+    )
+
+    return train_loader, val_loader, test_loader
 
 
 # Electricity dataset management
 def load_elec_dataset(
-    path="../data/Electricity/LD2011_2014.txt",
-    train_proportion=0.7,
-    val_proportion=0.1,
-    normalize=True,
-    dim_t=192,
-    dim_h=96,
+    path="data/Electricity/LD2011_2014.txt",
     showShape=False,
 ):
     """path: path to the file containing the Electricity data (by default "../data/Electricity/LD2011_2014.txt")
@@ -130,38 +158,24 @@ def load_elec_dataset(
     """
 
     # Data collecting and cleaning (copied from load_ld_dataset)
-    data = pd.read_csv(path, decimal=",", sep=";")
-    data = data_to_hour(data)
-    data = data_filter_client(data)
-    data = data.drop(columns=data.columns[0], axis=1)
+    df = pd.read_csv(path, decimal=",", sep=";")
+    df = data_to_hour(df)
+    df = data_filter_client(df)
+    df = df.drop(columns=df.columns[0], axis=1)
     # Idea - Adding a total value column otherwise the number of columns
     # doesn't match the paper values (320 against 321)
 
     if showShape:
-        print("Elec shape :", data.shape)
+        print("Elec shape :", df.shape)
         return
 
-    # Dataset split
-    data_train, data_val, data_test = train_val_test_split(
-        data, train_proportion, val_proportion, normalize
-    )
-    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
-    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
-    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
-
-    # Returning the split
-    return train_dataset, val_dataset, test_dataset
+    return df
 
 
 # ETT dataset management
 def load_ETT_dataset(
-    path="../data/ETT/ETT",
+    path="data/ETT/ETT",
     choice="h1",
-    train_proportion=0.6,
-    val_proportion=0.2,
-    normalize=True,
-    dim_t=192,
-    dim_h=96,
     showShape=False,
 ):
     """path: path to the file containing the ETT data (by default "../data/ETT/ETT*")
@@ -181,33 +195,19 @@ def load_ETT_dataset(
         path += choice + ".txt"
 
     # CSV file into pandas conversion and cleaning
-    data = pd.read_csv(path)
-    data = data.select_dtypes([np.number])  # Removing non-numeric columns
+    df = pd.read_csv(path)
+    df = df.select_dtypes([np.number])  # Removing non-numeric columns
 
     if showShape:
-        print("ETT", choice, "shape :", data.shape)
+        print("ETT", choice, "shape :", df.shape)
         return
 
-    # Dataset split
-    data_train, data_val, data_test = train_val_test_split(
-        data, train_proportion, val_proportion, normalize
-    )
-    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
-    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
-    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
-
-    # Returning the split
-    return train_dataset, val_dataset, test_dataset
+    return df
 
 
 # Exchange dataset management
 def load_exchange_dataset(
-    path="../data/Exchange/exchange_rate.txt",
-    train_proportion=0.7,
-    val_proportion=0.1,
-    normalize=True,
-    dim_t=192,
-    dim_h=96,
+    path="data/Exchange/exchange_rate.txt",
     showShape=False,
 ):
     """path: path to the file containing the Exchange data (by default "../data/Exchange/exchange_rate.txt")
@@ -220,33 +220,19 @@ def load_exchange_dataset(
     """
 
     # CSV file into pandas conversion and cleaning
-    data = pd.read_csv(path, decimal=".", sep=",", header=None)
-    data = data.select_dtypes([np.number])  # Removing non-numeric columns
+    df = pd.read_csv(path, decimal=".", sep=",", header=None)
+    df = df.select_dtypes([np.number])  # Removing non-numeric columns
 
     if showShape:
-        print("Exchange shape :", data.shape)
+        print("Exchange shape :", df.shape)
         return
 
-    # Dataset split
-    data_train, data_val, data_test = train_val_test_split(
-        data, train_proportion, val_proportion, normalize
-    )
-    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
-    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
-    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
-
-    # Returning the split
-    return train_dataset, val_dataset, test_dataset
+    return df
 
 
 # ILI dataset management
 def load_ILI_dataset(
-    path="../data/ILI/ILINet.csv",
-    train_proportion=0.6,
-    val_proportion=0.2,
-    normalize=True,
-    dim_t=60,
-    dim_h=24,
+    path="data/ILI/ILINet.csv",
     showShape=False,
 ):
     """path: path to the file containing the ILI data (by default "../data/ILI/ILINet.csv")
@@ -259,8 +245,8 @@ def load_ILI_dataset(
     """
 
     # CSV file into pandas conversion and cleaning
-    data = pd.read_csv(path)
-    data.drop(
+    df = pd.read_csv(path)
+    df.drop(
         ["YEAR", "WEEK", "REGION TYPE", "REGION", "% WEIGHTED ILI", "%UNWEIGHTED ILI"],
         inplace=True,
         axis=1,
@@ -272,37 +258,23 @@ def load_ILI_dataset(
             return int(d["AGE 25-49"]) + int(d["AGE 50-64"])
         return int(d["AGE 25-64"])
 
-    data["AGE 25-64"] = data.apply(compute_total, axis=1)
+    df["AGE 25-64"] = df.apply(compute_total, axis=1)
     # We remove the useless columns to only keep 7 like shown in the paper
     # AGE 25-49 and AGE 50-64 are useless if we have AGE 25-64
-    data.drop(["AGE 25-49", "AGE 50-64"], inplace=True, axis=1)
+    df.drop(["AGE 25-49", "AGE 50-64"], inplace=True, axis=1)
     # We remove the last 26 lines of the dataset to match the expected number of lines from the paper
-    data.drop(data.tail(26).index, inplace=True)
+    df.drop(df.tail(26).index, inplace=True)
 
     if showShape:
-        print("ILI shape :", data.shape)
+        print("ILI shape :", df.shape)
         return
 
-    # Dataset split
-    data_train, data_val, data_test = train_val_test_split(
-        data, train_proportion, val_proportion, normalize
-    )
-    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
-    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
-    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
-
-    # Returning the split
-    return train_dataset, val_dataset, test_dataset
+    return df
 
 
 # Traffic dataset management
 def load_traffic_dataset(
-    path="../data/Traffic/traffic_hourly_dataset.txt",
-    train_proportion=0.7,
-    val_proportion=0.1,
-    normalize=True,
-    dim_t=192,
-    dim_h=96,
+    path="data/Traffic/traffic_hourly_dataset.txt",
     showShape=False,
 ):
     """path: path to the file containing the Traffic data (by default "../data/Traffic/traffic-5-years.txt")
@@ -315,36 +287,22 @@ def load_traffic_dataset(
     """
 
     # CSV file into pandas conversion and cleaning
-    data = pd.read_csv(path, header=None, decimal=".", sep=",")
+    df = pd.read_csv(path, header=None, decimal=".", sep=",")
     # Need to remove the timestamp to only keep numeric values
-    data[0] = data[0].map(lambda x: float(x.split(":")[2]))
-    data = data.select_dtypes([np.number])  # Removing non-numeric columns
-    data = data.T  # Need to transpose the dataframe, otherwise incorrect data shape
+    df[0] = df[0].map(lambda x: float(x.split(":")[2]))
+    df = df.select_dtypes([np.number])  # Removing non-numeric columns
+    df = df.T  # Need to transpose the dataframe, otherwise incorrect data shape
 
     if showShape:
-        print("Traffic shape :", data.shape)
+        print("Traffic shape :", df.shape)
         return
 
-    # Dataset split
-    data_train, data_val, data_test = train_val_test_split(
-        data, train_proportion, val_proportion, normalize
-    )
-    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
-    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
-    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
-
-    # Returning the split
-    return train_dataset, val_dataset, test_dataset
+    return df
 
 
 # Weather dataset management
 def load_weather_dataset(
-    path="../data/Weather/mpi_roof_2020.csv",
-    train_proportion=0.7,
-    val_proportion=0.1,
-    normalize=True,
-    dim_t=192,
-    dim_h=96,
+    path="data/Weather/mpi_roof_2020.csv",
     showShape=False,
 ):
     """path: path to the file containing the Weather data (by default "../data/Weather/mpi_roof_2020.csv")
@@ -357,23 +315,14 @@ def load_weather_dataset(
     """
 
     # CSV file into pandas conversion and cleaning
-    data = pd.read_csv(path)
-    data = data.select_dtypes([np.number])
+    df = pd.read_csv(path)
+    df = df.select_dtypes([np.number])
 
     if showShape:
-        print("Weather shape :", data.shape)
+        print("Weather shape :", df.shape)
         return
 
-    # Dataset split
-    data_train, data_val, data_test = train_val_test_split(
-        data, train_proportion, val_proportion, normalize
-    )
-    train_dataset = TimeSeriesDataset(data_train, dim_t, dim_h)
-    val_dataset = TimeSeriesDataset(data_val, dim_t, dim_h)
-    test_dataset = TimeSeriesDataset(data_test, dim_t, dim_h)
-
-    # Returning the split
-    return train_dataset, val_dataset, test_dataset
+    return df
 
 
 class TimeSeriesDataset(data.Dataset):
