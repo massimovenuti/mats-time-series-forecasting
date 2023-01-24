@@ -3,6 +3,7 @@ from torch import autograd
 from torch import linalg
 import torch
 import numpy as np
+from torch.nn import functional as F
 
 
 class Encoder(nn.Module):
@@ -60,7 +61,8 @@ class Discriminator(nn.Module):
     def __init__(self, dim_in):
         super().__init__()
         self.backbone = Encoder(dim_in)
-        self.fc = nn.Sequential(nn.Linear(in_features=64, out_features=1), nn.Sigmoid())
+        # self.fc = nn.Sequential(nn.Linear(in_features=64, out_features=1), nn.Sigmoid())
+        self.fc = nn.Linear(in_features=64, out_features=1)  # removed sigmoid
 
     def forward(self, X):
         backbone_out = self.backbone(X)
@@ -119,12 +121,18 @@ class DiscriminatorLoss(nn.Module):
         super().__init__()
 
     def forward(self, Dhat, D):
-        # TODO : je ne comprends pas l'intérêt des max() vu que D et Dhat sont dans [0,1]
-        # TODO: peut être qu'il faut utiliser Tanh en sortie du discrim au lieu de sigmoid
-        max_D = torch.maximum(torch.zeros_like(D), 1 - D)
-        max_Dhat = torch.maximum(torch.zeros_like(Dhat), 1 + Dhat)
-        loss = torch.mean(max_D + max_Dhat)
+        loss_D = torch.mean(F.relu(1.0 - D))
+        loss_Dhat = torch.mean(F.relu(1.0 + Dhat))
+        loss = 0.5 * (loss_D + loss_Dhat)
         return loss
+
+    # def forward(self, Dhat, D):
+    #     # TODO : je ne comprends pas l'intérêt des max() vu que D et Dhat sont dans [0,1]
+    #     # TODO: peut être qu'il faut utiliser Tanh en sortie du discrim au lieu de sigmoid
+    #     max_D = torch.maximum(torch.zeros_like(D), 1 - D)
+    #     max_Dhat = torch.maximum(torch.zeros_like(Dhat), 1 + Dhat)
+    #     loss = torch.mean(max_D + max_Dhat)
+    #     return loss
 
 
 class EDMLoss(nn.Module):
@@ -158,6 +166,8 @@ class EDMLoss(nn.Module):
         weight = linalg.norm(rec_grads) / (linalg.norm(d_grads) + self.gamma)
 
         # TODO: torch.clamp ? C.f github de VQGAN
+        # weight = torch.clamp(weight, 0.0, self.gamma)
+        # weight = weight * self.discriminator_weight (=0.8)
 
         return weight.detach()
 

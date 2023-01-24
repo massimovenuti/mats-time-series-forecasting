@@ -56,8 +56,12 @@ def train_stage_1(
                 writer.add_scalar("Stage_1/EDM/Lambda", lmbda, iteration)
             else:
                 # (3)
-                D = state.discriminator(X).to(device)  # BATCH_SIZE * 1 * DIM_T2
-                Dhat = state.discriminator(Xhat).to(device)  #  BATCH_SIZE * 1 * DIM_T2
+                D = state.discriminator(X.detach()).to(
+                    device
+                )  # BATCH_SIZE * 1 * DIM_T2
+                Dhat = state.discriminator(Xhat.detach()).to(
+                    device
+                )  #  BATCH_SIZE * 1 * DIM_T2
                 d_loss = criterion_discriminator(Dhat, D)
                 d_loss.backward()
                 state.optim_discriminator.step()
@@ -331,14 +335,14 @@ if __name__ == "__main__":
             optim_predictor,
         )
 
-    train_stage_1(
-        train_loader_1,
-        mats_state,
-        epochs=1000,
-        device=device,
-        save_path=save_path,
-        writer=writer,
-    )
+    # train_stage_1(
+    #     train_loader_1,
+    #     mats_state,
+    #     epochs=1000,
+    #     device=device,
+    #     save_path=save_path,
+    #     writer=writer,
+    # )
 
     # freeze stage 1 models
     list_models = [
