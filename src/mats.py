@@ -62,8 +62,8 @@ class Discriminator(nn.Module):
     def __init__(self, dim_in):
         super().__init__()
         self.backbone = Encoder(dim_in)
-        # self.fc = nn.Sequential(nn.Linear(in_features=64, out_features=1), nn.Sigmoid())
-        self.fc = nn.Linear(in_features=64, out_features=1)  # removed sigmoid
+        self.fc = nn.Sequential(nn.Linear(in_features=64, out_features=1), nn.Sigmoid())
+        # self.fc = nn.Linear(in_features=64, out_features=1)  # removed sigmoid
 
     def forward(self, X):
         backbone_out = self.backbone(X)
