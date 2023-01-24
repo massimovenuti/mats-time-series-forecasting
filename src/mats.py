@@ -117,13 +117,14 @@ class MemoryBank(nn.Module):
 
 
 class DiscriminatorLoss(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, weight=0.8) -> None:
         super().__init__()
+        self.weight = weight
 
     def forward(self, Dhat, D):
         loss_D = torch.mean(F.relu(1.0 - D))
         loss_Dhat = torch.mean(F.relu(1.0 + Dhat))
-        loss = 0.5 * (loss_D + loss_Dhat)
+        loss = self.weight * 0.5 * (loss_D + loss_Dhat)
         return loss
 
     # def forward(self, Dhat, D):
@@ -136,11 +137,14 @@ class DiscriminatorLoss(nn.Module):
 
 
 class EDMLoss(nn.Module):
-    def __init__(self, decoder, alpha=1.0, gamma=1e-6) -> None:
+    def __init__(
+        self, decoder, alpha=1.0, gamma=1e-4, discriminator_weight=0.8
+    ) -> None:
         super().__init__()
         # TODO : gamma = 1e-4 ? C.f github de VQGAN
         self.reconstruction_loss = nn.MSELoss()
         self.decoder_last_layer = decoder.network[-1].weight
+        self.discriminator_weight = discriminator_weight
         self.alpha = alpha
         self.gamma = gamma
 
@@ -157,7 +161,7 @@ class EDMLoss(nn.Module):
         return loss
 
     def calc_adaptive_weight(self, loss_rec, loss_d, last_layer):
-        # TODO : VQGAN recommands to set lambda = 0 for at least 1 epoch
+        # VQGAN recommands to set lambda = 0 for at least 1 epoch
         # They set lambda to 0 in an initial warm-up phase
         # They found that longer warm-ups generally lead to better reconstructions
         rec_grads = autograd.grad(loss_rec, last_layer, retain_graph=True)[0]
@@ -165,9 +169,7 @@ class EDMLoss(nn.Module):
 
         weight = linalg.norm(rec_grads) / (linalg.norm(d_grads) + self.gamma)
 
-        # TODO: torch.clamp ? C.f github de VQGAN
-        # weight = torch.clamp(weight, 0.0, self.gamma)
-        # weight = weight * self.discriminator_weight (=0.8)
+        weight = torch.clamp(weight, 0.0, 1e4)
 
         return weight.detach()
 
@@ -179,12 +181,11 @@ class EDMLoss(nn.Module):
         if lmbda is None:
             lmbda = self.calc_adaptive_weight(loss_rec, loss_d, self.decoder_last_layer)
 
-        return loss_rec + self.alpha * loss_m + lmbda * loss_d, (
-            loss_rec,
-            loss_m,
-            loss_d,
-            lmbda,
+        loss = (
+            loss_rec + self.alpha * loss_m + self.discriminator_weight * lmbda * loss_d
         )
+
+        return loss, (loss_rec, loss_m, loss_d, lmbda)
 
 
 class State:
