@@ -115,11 +115,11 @@ class Predictor(nn.Module):
 class MemoryBank(nn.Module):
     def __init__(self, size, dim) -> None:
         super().__init__()
-        self.units = nn.Parameter(torch.randn(dim, size))
+        # self.units = nn.Parameter(torch.randn(dim, size))
         # rq: Initialisation non précisée dans le papier
-        # units = torch.zeros((dim, size))
-        # nn.init.uniform_(units, -1, 1)
-        # self.units = nn.Parameter(units)
+        units = torch.zeros((dim, size))
+        nn.init.uniform_(units, -1, 1)
+        self.units = nn.Parameter(units)
 
     def forward(self, H):
         """
