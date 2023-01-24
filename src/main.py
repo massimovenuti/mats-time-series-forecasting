@@ -14,7 +14,8 @@ from tqdm import tqdm
 
 
 BATCH_SIZE = 64
-DIM_T = 192  # Longeur d'une serie chronologique stage 1
+DIM_T_1 = 192  # Longeur d'une serie chronologique stage 1
+DIM_T_2 = 96  # Longeur d'une serie chronologique stage 2
 # DIM_H = [96, 192, 336, 720]  # Nombre de valeur à prédire pour une serie chronologique
 DIM_H = 96  # Nombre de valeur à prédire pour une serie chronologique
 DIM_E = 64  # Nombre de variable d'une serie chronologique apres encodeur ( taille couche sortie encodeur)
@@ -29,10 +30,16 @@ if __name__ == "__main__":
     save_path = Path(STATES_DIR, "mats.pkl")
     save_path.parent.mkdir(exist_ok=True)
 
-    train_loader, val_loader, test_loader = datasets.get_loaders(
+    train_loader_1, _, _ = datasets.get_loaders(
         dataset="exchange",
         path="data/Exchange/exchange_rate.txt",
-        dim_t=DIM_T,
+        dim_t=DIM_T_1,
+    )
+
+    train_loader_2, val_loader_2, test_loader_2 = datasets.get_loaders(
+        dataset="exchange",
+        path="data/Exchange/exchange_rate.txt",
+        dim_t=DIM_T_2,
         dim_h=DIM_H,
     )
 
@@ -40,13 +47,14 @@ if __name__ == "__main__":
         with save_path.open("rb") as fp:
             model = torch.load(fp)
     else:
-        dim_c = train_loader.dataset.data.shape[1]
+        dim_c = train_loader_1.dataset.data.shape[1]
         model = mats.MATS(dim_c, SIZE_M, DIM_E)
 
     model = model.to(device)
 
     model.fit(
-        dataloader=train_loader,
+        dataloader_1=train_loader_1,
+        dataloader_2=train_loader_2,
         epochs_s1=1000,
         epochs_s2=500,
         save_path=save_path,
@@ -54,21 +62,21 @@ if __name__ == "__main__":
         device=device,
     )
 
-    list_mse, list_mae = model.test(train_loader, device)
+    list_mse, list_mae = model.test(train_loader_2, device)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[TRAIN] \t MSE : {mse:.2f}")
     print(f"[TRAIN] \t MAE : {mae:.2f}")
     print("=======")
 
-    list_mse, list_mae = model.test(val_loader, device)
+    list_mse, list_mae = model.test(val_loader_2, device)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[VAL] \t MSE : {mse:.2f}")
     print(f"[VAL] \t MAE : {mae:.2f}")
     print("=======")
 
-    list_mse, list_mae = model.test(test_loader, device)
+    list_mse, list_mae = model.test(test_loader_2, device)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[TEST] \t MSE : {mse:.2f}")

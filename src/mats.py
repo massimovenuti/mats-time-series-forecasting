@@ -363,15 +363,16 @@ class MATS(nn.Module):
 
     def fit(
         self,
-        dataloader,
-        epochs_s1,
-        epochs_s2,
+        dataloader_1,
+        dataloader_2,
+        epochs_1,
+        epochs_2,
         save_path,
         writer,
         device="cpu",
     ):
         self.train()
-        self.train_stage_1(dataloader, epochs_s1, save_path, writer, device)
+        self.train_stage_1(dataloader_1, epochs_1, save_path, writer, device)
 
         # freeze stage 1
         list_models = [
@@ -384,7 +385,7 @@ class MATS(nn.Module):
             for param in model.parameters():
                 param.requires_grad = False
 
-        self.train_stage_2(dataloader, epochs_s2, save_path, writer, device)
+        self.train_stage_2(dataloader_2, epochs_2, save_path, writer, device)
 
     @torch.no_grad()
     def test(self, dataloader, device="cpu"):
