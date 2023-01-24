@@ -44,6 +44,7 @@ def train_stage_1(
             if e % 2 == 0:
                 # (4)
                 Dhat = state.discriminator(Xhat).to(device)  #  BATCH_SIZE * 1 * DIM_T2
+                lmbda = None if epoch > 0 else 0
                 edm_loss, (loss_rec, loss_m, loss_d, lmbda) = criterion_edm(
                     Xhat, X, H, state.memory_bank.units, Dhat
                 )
@@ -54,7 +55,7 @@ def train_stage_1(
                 writer.add_scalar("Stage_1/EDM/Loss_m", loss_m, iteration)
                 writer.add_scalar("Stage_1/EDM/Loss_d", loss_d, iteration)
                 writer.add_scalar("Stage_1/EDM/Lambda", lmbda, iteration)
-            else:
+            elif epoch > 0:
                 # (3)
                 D = state.discriminator(X.detach()).to(
                     device
@@ -71,12 +72,19 @@ def train_stage_1(
                 pbar.set_description(
                     f"[STAGE 1]" f"[{epoch}/{epochs}][{e}/{len(dataloader)}]"
                 )
-                pbar.set_postfix(
-                    {
-                        "EDM_loss": round(edm_loss.item(), 2),
-                        "D_loss": round(d_loss.item(), 2),
-                    }
-                )
+                if epoch > 0:
+                    pbar.set_postfix(
+                        {
+                            "EDM_loss": round(edm_loss.item(), 2),
+                            "D_loss": round(d_loss.item(), 2),
+                        }
+                    )
+                else:
+                    pbar.set_postfix(
+                        {
+                            "EDM_loss": round(edm_loss.item(), 2),
+                        }
+                    )
 
             iteration = iteration + 1
 

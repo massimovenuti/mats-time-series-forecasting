@@ -171,12 +171,13 @@ class EDMLoss(nn.Module):
 
         return weight.detach()
 
-    def forward(self, Xhat, X, H, M, Dhat):
+    def forward(self, Xhat, X, H, M, Dhat, lmbda=None):
         loss_rec = self.reconstruction_loss(Xhat, X)
         loss_m = self.memory_loss(H, M)
         loss_d = -Dhat.mean()
 
-        lmbda = self.calc_adaptive_weight(loss_rec, loss_d, self.decoder_last_layer)
+        if lmbda is None:
+            lmbda = self.calc_adaptive_weight(loss_rec, loss_d, self.decoder_last_layer)
 
         return loss_rec + self.alpha * loss_m + lmbda * loss_d, (
             loss_rec,
