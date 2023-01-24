@@ -284,8 +284,8 @@ class MATS(nn.Module):
             # (3)
             D = self.discriminator(X.detach())  # BATCH_SIZE * 1 * DIM_T2
             Dhat = self.discriminator(Xhat.detach())  #  BATCH_SIZE * 1 * DIM_T2
-            d_loss = criterion_discriminator(Dhat, D)
-            d_loss.backward()
+            loss, partial_losses = criterion_discriminator(Dhat, D)
+            loss.backward()
             self.optim_discriminator.step()
 
         return loss, partial_losses
