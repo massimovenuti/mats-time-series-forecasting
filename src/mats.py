@@ -6,6 +6,12 @@ import numpy as np
 from torch.nn import functional as F
 from tqdm import tqdm
 
+# TODO : should we use ?
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find("Conv") != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+
 
 class Encoder(nn.Module):
     def __init__(self, dim_in):
@@ -62,8 +68,8 @@ class Discriminator(nn.Module):
     def __init__(self, dim_in):
         super().__init__()
         self.backbone = Encoder(dim_in)
-        self.fc = nn.Sequential(nn.Linear(in_features=64, out_features=1), nn.Sigmoid())
-        # self.fc = nn.Linear(in_features=64, out_features=1)  # removed sigmoid
+        # self.fc = nn.Sequential(nn.Linear(in_features=64, out_features=1), nn.Sigmoid())
+        self.fc = nn.Linear(in_features=64, out_features=1)  # removed sigmoid
 
     def forward(self, X):
         backbone_out = self.backbone(X)
@@ -143,29 +149,25 @@ class DiscriminatorLoss(nn.Module):
         super().__init__()
         self.weight = weight
 
-    def forward(self, Dhat, D):
-        loss_D = torch.mean(F.relu(1.0 - D))
-        loss_Dhat = torch.mean(F.relu(1.0 + Dhat))
-        loss = self.weight * 0.5 * (loss_D + loss_Dhat)
-        return loss, (loss_D, loss_Dhat)
-
     # def forward(self, Dhat, D):
-    #     # TODO : je ne comprends pas l'intérêt des max() vu que D et Dhat sont dans [0,1]
-    #     # TODO: peut être qu'il faut utiliser Tanh en sortie du discrim au lieu de sigmoid
-    #     max_D = torch.maximum(torch.zeros_like(D), 1 - D)
-    #     max_Dhat = torch.maximum(torch.zeros_like(Dhat), 1 + Dhat)
-    #     loss = torch.mean(max_D + max_Dhat)
-    #     return loss
+    #     loss_D = torch.mean(F.relu(1.0 - D))
+    #     loss_Dhat = torch.mean(F.relu(1.0 + Dhat))
+    #     loss = self.weight * 0.5 * (loss_D + loss_Dhat)
+    #     return loss, (loss_D, loss_Dhat)
+
+    def forward(self, Dhat, D):
+        # TODO : je ne comprends pas l'intérêt des max() vu que D et Dhat sont dans [0,1]
+        max_D = torch.maximum(torch.zeros_like(D), 1 - D)
+        max_Dhat = torch.maximum(torch.zeros_like(Dhat), 1 + Dhat)
+        loss = torch.mean(max_D + max_Dhat)
+        return loss, (max_D, max_Dhat)
 
 
 class EDMLoss(nn.Module):
-    def __init__(
-        self, decoder, alpha=1.0, gamma=1e-4, discriminator_weight=0.8
-    ) -> None:
+    def __init__(self, alpha=1.0, gamma=1e-4, discriminator_weight=0.8) -> None:
         super().__init__()
         # TODO : gamma = 1e-4 ? C.f github de VQGAN
         self.reconstruction_loss = nn.MSELoss()
-        self.decoder_last_layer = decoder.network[-1].weight
         self.discriminator_weight = discriminator_weight
         self.alpha = alpha
         self.gamma = gamma
@@ -195,13 +197,15 @@ class EDMLoss(nn.Module):
 
         return weight.detach()
 
-    def forward(self, Xhat, X, H, M, Dhat, lmbda=None):
+    def forward(self, Xhat, X, H, M, Dhat, decoder, lmbda=None):
         loss_rec = self.reconstruction_loss(Xhat, X)
         loss_m = self.memory_loss(H, M)
         loss_d = -Dhat.mean()
 
+        decoder_last_layer = decoder.network[-1].weight
+
         if lmbda is None:
-            lmbda = self.calc_adaptive_weight(loss_rec, loss_d, self.decoder_last_layer)
+            lmbda = self.calc_adaptive_weight(loss_rec, loss_d, decoder_last_layer)
 
         loss = (
             loss_rec + self.alpha * loss_m + self.discriminator_weight * lmbda * loss_d
@@ -262,7 +266,7 @@ class MATS(nn.Module):
         return Xpred
 
     def step_stage_1(self, X, optim_index, lmbda=None):
-        criterion_edm = EDMLoss(self.decoder)
+        criterion_edm = EDMLoss()
         criterion_discriminator = DiscriminatorLoss()
 
         self.optim_edm.zero_grad()
@@ -276,7 +280,7 @@ class MATS(nn.Module):
             # (4)
             Dhat = self.discriminator(Xhat)  #  BATCH_SIZE * 1 * DIM_T2
             loss, partial_losses = criterion_edm(
-                Xhat, X, H, self.memory_bank.units, Dhat, lmbda
+                Xhat, X, H, self.memory_bank.units, Dhat, self.decoder, lmbda
             )
             loss.backward()
             self.optim_edm.step()
@@ -311,7 +315,7 @@ class MATS(nn.Module):
         return loss
 
     def train_stage_1(
-        self, dataloader, epochs, save_path, writer, device="cpu", disc_start=10000
+        self, dataloader, epochs, save_path, writer, device="cpu", disc_start=2000
     ):
         # stage 1
         iteration = self.state_1.iteration
@@ -320,7 +324,7 @@ class MATS(nn.Module):
             for X, _ in dataloader:
                 X = X.to(device)
                 optim_index = 0 if iteration < disc_start or iteration % 2 == 0 else 1
-                lmbda = None if iteration > disc_start else 0
+                lmbda = 0 if iteration < disc_start else None
 
                 loss, partial_losses = self.step_stage_1(X, optim_index, lmbda)
 
