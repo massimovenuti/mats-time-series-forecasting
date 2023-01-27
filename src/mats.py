@@ -124,7 +124,7 @@ class MemoryBank(nn.Module):
         # self.units = nn.Parameter(torch.randn(dim, size))
         # rq: Initialisation non précisée dans le papier
         units = torch.zeros((dim, size))
-        nn.init.uniform_(units, -1, 1)
+        nn.init.uniform_(units, -1.0 / size, 1.0 / size)
         self.units = nn.Parameter(units)
 
     def forward(self, H):
