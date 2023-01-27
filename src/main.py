@@ -30,7 +30,7 @@ if __name__ == "__main__":
     save_path = Path(STATES_DIR, "mats.pkl")
     save_path.parent.mkdir(exist_ok=True)
 
-    train_loader_1, _, _ = datasets.get_loaders(
+    train_loader_1, val_loader_1, _ = datasets.get_loaders(
         dataset="exchange",
         path="data/Exchange/exchange_rate.txt",
         dim_t=DIM_T_1,
@@ -53,8 +53,10 @@ if __name__ == "__main__":
     model = model.to(device)
 
     model.fit(
-        dataloader_1=train_loader_1,
-        dataloader_2=train_loader_2,
+        train_loader_1=train_loader_1,
+        val_loader_1=val_loader_1,
+        train_loader_2=train_loader_2,
+        val_loader_2=val_loader_2,
         epochs_1=1000,
         epochs_2=500,
         save_path=save_path,
@@ -62,21 +64,21 @@ if __name__ == "__main__":
         device=device,
     )
 
-    list_mse, list_mae = model.test(train_loader_2, device)
+    list_mse, list_mae = model.evaluate(train_loader_2, device)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[TRAIN] \t MSE : {mse:.2f}")
     print(f"[TRAIN] \t MAE : {mae:.2f}")
     print("=======")
 
-    list_mse, list_mae = model.test(val_loader_2, device)
+    list_mse, list_mae = model.evaluate(val_loader_2, device)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[VAL] \t MSE : {mse:.2f}")
     print(f"[VAL] \t MAE : {mae:.2f}")
     print("=======")
 
-    list_mse, list_mae = model.test(test_loader_2, device)
+    list_mse, list_mae = model.evaluate(test_loader_2, device)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[TEST] \t MSE : {mse:.2f}")
