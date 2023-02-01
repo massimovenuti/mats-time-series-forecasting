@@ -421,7 +421,7 @@ class MATS(nn.Module):
 
             mse = F.mse_loss(Xpred, y, reduction="sum")
             tot_mse += mse
-            n += len(y)
+            n += np.prod(X.shape)
 
         return tot_mse / n, tot_loss / n
 
@@ -503,7 +503,7 @@ class MATS(nn.Module):
             mae = F.l1_loss(Xpred, y, reduction="sum")
             tot_mse += mse.item()
             tot_mae += mae.item()
-            n += len(y)
+            n += np.prod(X.shape)
 
         return tot_mse / n, tot_mae / n
 
