@@ -6,93 +6,41 @@ import pathlib
 import torch
 
 
-def train_val_test_split(data, train_proportion, val_proportion, normalize):
-    train_split_idx = round(len(data) * train_proportion)
-    val_split_idx = train_split_idx + round(len(data) * val_proportion)
-
-    data_train = data[:train_split_idx]
-    data_val = data[train_split_idx:val_split_idx]
-    data_test = data[val_split_idx:]
+def train_test_split(data, train_size, val_size=0, normalize=True):
+    if val_size > 0:
+        data_train, data_val, data_test = np.split(
+            data,
+            [int(train_size * len(data)), int((train_size + val_size) * len(data))],
+        )
+    else:
+        data_train, data_test = np.split(data, [int(train_size * len(data))])
 
     if normalize:
         scaler = preprocessing.StandardScaler()
-
         scaler.fit(data_train)
 
         data_train = scaler.transform(data_train)
-        data_val = scaler.transform(data_val)
         data_test = scaler.transform(data_test)
+        if val_size > 0:
+            data_val = scaler.transform(data_val)
+
+    if val_size == 0:
+        return data_train, data_test
 
     return data_train, data_val, data_test
-
-
-def data_to_hour(df, begin=4 * 24 * 365, frequency=4):
-    out = []
-    data = df.to_numpy()
-    n = len(data)
-
-    for i in range(begin, n, frequency):
-        date = data[i, 0].split(":")[0]
-        data_houre = data[i : i + frequency, 1:].mean(axis=0)
-        out.append([date] + list(data_houre))
-
-    return pd.DataFrame(out)
-
-
-def data_filter_client(df, number_client=320):
-    set_index_client = {0}
-    index = 0
-
-    while len(set_index_client) < number_client:
-
-        for i, value in enumerate(df.iloc[index, 1:]):
-            if value != 0:
-                set_index_client.add(i + 1)
-        index += 1
-
-    return df.iloc[:, list(set_index_client)]
-
-
-def load_cached_datasets(cache_dir, prefix):
-    cache_dir_path = pathlib.Path(cache_dir)
-
-    if not cache_dir_path.is_dir():
-        return None
-
-    try:
-        train_dataset = torch.load(pathlib.Path(cache_dir_path, f"{prefix}.train.pkl"))
-        val_dataset = torch.load(pathlib.Path(cache_dir_path, f"{prefix}.val.pkl"))
-        test_dataset = torch.load(pathlib.Path(cache_dir_path, f"{prefix}.test.pkl"))
-    except:
-        return None
-
-    return train_dataset, val_dataset, test_dataset
-
-
-def cache_dataset(cache_dir, prefix, train_dataset, val_dataset, test_dataset):
-    cache_dir_path = pathlib.Path(cache_dir)
-    cache_dir_path.mkdir(parents=True, exist_ok=True)
-    torch.save(train_dataset, pathlib.Path(cache_dir, f"{prefix}.train.pkl"))
-    torch.save(val_dataset, pathlib.Path(cache_dir, f"{prefix}.val.pkl"))
-    torch.save(test_dataset, pathlib.Path(cache_dir, f"{prefix}.test.pkl"))
 
 
 def get_loaders(
     dataset,
     path,
-    cache_dir=None,
     batch_size=64,
-    train_proportion=0.7,
-    val_proportion=0.1,
+    train_size=0.8,
+    val_size=0,
     dim_t=192,
     dim_h=96,
     normalize=True,
+    univariate=False,
 ):
-    # if cache_dir is not None:
-    #     datasets = load_cached_datasets(cache_dir, "ld")
-    #     if datasets != None:
-    #         return datasets
-
     datasets = ["electricity", "exchange", "ett", "ili", "traffic", "weather"]
     assert dataset in datasets
 
@@ -109,33 +57,36 @@ def get_loaders(
     load_fn = load_fonctions[dataset_index]
 
     df = load_fn(path)
+    df = df.select_dtypes([np.number])
+
+    if univariate:
+        df = df.iloc[:, -1]
 
     # Dataset split
-    df_train, df_val, df_test = train_val_test_split(
-        df, train_proportion, val_proportion, normalize
-    )
-
-    train_dataset = TimeSeriesDataset(df_train, dim_t, dim_h)
-    val_dataset = TimeSeriesDataset(df_val, dim_t, dim_h)
-    test_dataset = TimeSeriesDataset(df_test, dim_t, dim_h)
-
-    # if cache_dir is not None:
-    #     cache_dataset(cache_dir, "ld", train_dataset, val_dataset, test_dataset)
+    if val_size > 0:
+        data_train, data_val, data_test = train_test_split(
+            df, train_size, val_size, normalize
+        )
+    else:
+        data_train, data_test = train_test_split(df, train_size, val_size, normalize)
 
     train_loader = data.DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-    )
-
-    val_loader = data.DataLoader(
-        val_dataset,
+        TimeSeriesDataset(data_train, dim_t, dim_h),
         batch_size=batch_size,
         shuffle=True,
     )
 
     test_loader = data.DataLoader(
-        test_dataset,
+        TimeSeriesDataset(data_test, dim_t, dim_h),
+        batch_size=batch_size,
+        shuffle=True,
+    )
+
+    if val_size == 0:
+        return train_loader, test_loader
+
+    val_loader = data.DataLoader(
+        TimeSeriesDataset(data_val, dim_t, dim_h),
         batch_size=batch_size,
         shuffle=True,
     )
@@ -144,10 +95,7 @@ def get_loaders(
 
 
 # Electricity dataset management
-def load_elec_dataset(
-    path="data/Electricity/LD2011_2014.txt",
-    showShape=False,
-):
+def load_elec_dataset(path):
     """path: path to the file containing the Electricity data (by default "../data/Electricity/LD2011_2014.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
@@ -156,28 +104,12 @@ def load_elec_dataset(
     \nshowShape: will stop the execution after the dataset creation to show it's size, no returns
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
-
-    # Data collecting and cleaning (copied from load_ld_dataset)
-    df = pd.read_csv(path, decimal=",", sep=";")
-    df = data_to_hour(df)
-    df = data_filter_client(df)
-    df = df.drop(columns=df.columns[0], axis=1)
-    # Idea - Adding a total value column otherwise the number of columns
-    # doesn't match the paper values (320 against 321)
-
-    if showShape:
-        print("Elec shape :", df.shape)
-        return
-
+    df = pd.read_csv(path, decimal=".", sep=",", header=None)
     return df
 
 
 # ETT dataset management
-def load_ETT_dataset(
-    path="data/ETT/ETT",
-    choice="h1",
-    showShape=False,
-):
+def load_ETT_dataset(path):
     """path: path to the file containing the ETT data (by default "../data/ETT/ETT*")
     \nWarning - Do not specify the file ending in the path ('*h1.txt' for example)
     \nchoice: data to be used (by default "h1", choose between {'h1', 'h2', 'm1', 'm2'})
@@ -188,28 +120,14 @@ def load_ETT_dataset(
     \nshowShape: will stop the execution after the dataset creation to show it's size, no returns
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
-    # File selection
-    if choice not in ["h1", "h2", "m1", "m2"]:
-        path += "h1.txt"  # In case there's an error in choice, h1 is the default choice
-    else:
-        path += choice + ".txt"
-
     # CSV file into pandas conversion and cleaning
     df = pd.read_csv(path)
     df = df.select_dtypes([np.number])  # Removing non-numeric columns
-
-    if showShape:
-        print("ETT", choice, "shape :", df.shape)
-        return
-
     return df
 
 
 # Exchange dataset management
-def load_exchange_dataset(
-    path="data/Exchange/exchange_rate.txt",
-    showShape=False,
-):
+def load_exchange_dataset(path):
     """path: path to the file containing the Exchange data (by default "../data/Exchange/exchange_rate.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
@@ -218,23 +136,13 @@ def load_exchange_dataset(
     \nshowShape: will stop the execution after the dataset creation to show it's size, no returns
     \nAll default values except 'path' are from the paper, section 4. Experiments
     """
-
     # CSV file into pandas conversion and cleaning
     df = pd.read_csv(path, decimal=".", sep=",", header=None)
-    df = df.select_dtypes([np.number])  # Removing non-numeric columns
-
-    if showShape:
-        print("Exchange shape :", df.shape)
-        return
-
     return df
 
 
 # ILI dataset management
-def load_ILI_dataset(
-    path="data/ILI/ILINet.csv",
-    showShape=False,
-):
+def load_ILI_dataset(path):
     """path: path to the file containing the ILI data (by default "../data/ILI/ILINet.csv")
     \ntrain_proportion: proportion of values for the training set (by default 0.6)
     \nval_proportion: proportion of values for the validation set (by default 0.2)
@@ -265,18 +173,11 @@ def load_ILI_dataset(
     # We remove the last 26 lines of the dataset to match the expected number of lines from the paper
     df.drop(df.tail(26).index, inplace=True)
 
-    if showShape:
-        print("ILI shape :", df.shape)
-        return
-
     return df
 
 
 # Traffic dataset management
-def load_traffic_dataset(
-    path="data/Traffic/traffic_hourly_dataset.txt",
-    showShape=False,
-):
+def load_traffic_dataset(path):
     """path: path to the file containing the Traffic data (by default "../data/Traffic/traffic-5-years.txt")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
@@ -287,24 +188,12 @@ def load_traffic_dataset(
     """
 
     # CSV file into pandas conversion and cleaning
-    df = pd.read_csv(path, header=None, decimal=".", sep=",")
-    # Need to remove the timestamp to only keep numeric values
-    df[0] = df[0].map(lambda x: float(x.split(":")[2]))
-    df = df.select_dtypes([np.number])  # Removing non-numeric columns
-    df = df.T  # Need to transpose the dataframe, otherwise incorrect data shape
-
-    if showShape:
-        print("Traffic shape :", df.shape)
-        return
-
+    df = pd.read_csv(path, decimal=".", sep=",", header=None)
     return df
 
 
 # Weather dataset management
-def load_weather_dataset(
-    path="data/Weather/mpi_roof_2020.csv",
-    showShape=False,
-):
+def load_weather_dataset(path):
     """path: path to the file containing the Weather data (by default "../data/Weather/mpi_roof_2020.csv")
     \ntrain_proportion: proportion of values for the training set (by default 0.7)
     \nval_proportion: proportion of values for the validation set (by default 0.1)
@@ -316,12 +205,6 @@ def load_weather_dataset(
 
     # CSV file into pandas conversion and cleaning
     df = pd.read_csv(path)
-    df = df.select_dtypes([np.number])
-
-    if showShape:
-        print("Weather shape :", df.shape)
-        return
-
     return df
 
 
@@ -338,13 +221,3 @@ class TimeSeriesDataset(data.Dataset):
         X = self.data[indice : indice + self.dim_t]
         y = self.data[indice + self.dim_t : indice + self.dim_t + self.dim_h]
         return X, y
-
-
-# Dataset shapes confirmation
-if __name__ == "__main__":
-    load_elec_dataset(showShape=True)
-    load_ETT_dataset(showShape=True)
-    load_exchange_dataset(showShape=True)
-    load_ILI_dataset(showShape=True)
-    load_traffic_dataset(showShape=True)
-    load_weather_dataset(showShape=True)

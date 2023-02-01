@@ -358,7 +358,7 @@ class MATS(nn.Module):
             self.state_1.iteration = iteration
             self.state_1.epoch = epoch + 1
 
-            if epoch % 20 == 0:
+            if epoch % 30 == 0:
                 loss_train, _ = self.evaluate_stage_1(train_loader)
                 loss_val, _ = self.evaluate_stage_1(val_loader)
                 writer.add_scalars(
@@ -401,8 +401,8 @@ class MATS(nn.Module):
     @torch.no_grad()
     def evaluate_stage_2(self, dataloader):
         device = next(self.parameters()).device
-        criterion_predictor = nn.BCELoss()
-        tot_mse, tot_loss = 0, 0
+        criterion_predictor = nn.BCELoss(reduction="sum")
+        tot_mse, tot_loss, n = 0, 0, 0
 
         for X, y in dataloader:
             X = X.to(device)
@@ -419,10 +419,10 @@ class MATS(nn.Module):
             Xhat = self.decode(Chat).movedim(1, 2)  # BATCH_SIZE * DIM_T * DIM_C
             Xpred = Xhat[:, -y.shape[1] :, :]  # BATCH_SIZE * DIM_H * DIM_C
 
-            mse = F.mse_loss(Xpred, y, reduction="mean")
+            mse = F.mse_loss(Xpred, y, reduction="sum")
             tot_mse += mse
+            n += len(y)
 
-        n = len(dataloader)
         return tot_mse / n, tot_loss / n
 
     def train_stage_2(self, train_loader, val_loader, epochs, save_path, writer):
@@ -441,7 +441,7 @@ class MATS(nn.Module):
             self.state_2.iteration = iteration
             self.state_2.epoch = epoch + 1
 
-            if epoch % 20 == 0:
+            if epoch % 30 == 0:
                 mse_train, loss_train = self.evaluate_stage_2(train_loader)
                 mse_val, loss_val = self.evaluate_stage_2(val_loader)
                 writer.add_scalars(
@@ -491,19 +491,21 @@ class MATS(nn.Module):
     def evaluate(self, dataloader):
         self.eval()
         device = next(self.parameters()).device
-        list_mse = []
-        list_mae = []
+        tot_mse = 0
+        tot_mae = 0
+        n = 0
 
         for X, y in tqdm(dataloader):
             X = X.to(device)
             y = y.to(device)
             Xpred = self.predict(X, horizon=y.shape[1])
-            mse = F.mse_loss(Xpred, y, reduction="mean")
-            mae = F.l1_loss(Xpred, y, reduction="mean")
-            list_mse.append(mse.cpu())
-            list_mae.append(mae.cpu())
+            mse = F.mse_loss(Xpred, y, reduction="sum")
+            mae = F.l1_loss(Xpred, y, reduction="sum")
+            tot_mse += mse.item()
+            tot_mae += mae.item()
+            n += len(y)
 
-        return list_mse, list_mae
+        return tot_mse / n, tot_mae / n
 
     def forward(self, X):
         return self.predict(X)
