@@ -57,28 +57,27 @@ if __name__ == "__main__":
         val_loader_1=val_loader_1,
         train_loader_2=train_loader_2,
         val_loader_2=val_loader_2,
-        epochs_1=1000,
-        epochs_2=500,
+        epochs_1=1,
+        epochs_2=1,
         save_path=save_path,
         writer=writer,
-        device=device,
     )
 
-    list_mse, list_mae = model.evaluate(train_loader_2, device)
+    list_mse, list_mae = model.evaluate(train_loader_2)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[TRAIN] \t MSE : {mse:.2f}")
     print(f"[TRAIN] \t MAE : {mae:.2f}")
     print("=======")
 
-    list_mse, list_mae = model.evaluate(val_loader_2, device)
+    list_mse, list_mae = model.evaluate(val_loader_2)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[VAL] \t MSE : {mse:.2f}")
     print(f"[VAL] \t MAE : {mae:.2f}")
     print("=======")
 
-    list_mse, list_mae = model.evaluate(test_loader_2, device)
+    list_mse, list_mae = model.evaluate(test_loader_2)
     mse = np.array(list_mse).mean()
     mae = np.array(list_mae).mean()
     print(f"[TEST] \t MSE : {mse:.2f}")

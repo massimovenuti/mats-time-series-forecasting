@@ -1,7 +1,6 @@
-./data
-./vscode
+vscode/
 **/__pycache__/
-/data
-./states
+data/
+states/
 src/states
 runs/

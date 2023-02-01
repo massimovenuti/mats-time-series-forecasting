@@ -219,7 +219,7 @@ class State:
 
 
 class MATS(nn.Module):
-    def __init__(self, dim_c, size_m, dim_e) -> None:
+    def __init__(self, dim_c, size_m, dim_e, disc_start=800) -> None:
         super().__init__()
         self.encoder = Encoder(dim_c)
         self.decoder = Decoder(dim_c)
@@ -240,6 +240,8 @@ class MATS(nn.Module):
 
         self.state_1 = State()
         self.state_2 = State()
+
+        self.disc_start = disc_start
 
     def encode(self, X):
         X = torch.movedim(X, 1, 2)  # BATCH_SIZE * DIM_C * DIM_T
@@ -286,7 +288,8 @@ class MATS(nn.Module):
         return loss, partial_losses
 
     @torch.no_grad()
-    def evaluate_stage_1(self, dataloader, device="cpu"):
+    def evaluate_stage_1(self, dataloader):
+        device = next(self.parameters()).device
         criterion_edm = EDMLoss()
 
         tot_loss, tot_loss_rec, tot_loss_m = 0, 0, 0
@@ -323,17 +326,18 @@ class MATS(nn.Module):
         epochs,
         save_path,
         writer,
-        device="cpu",
-        disc_start=800,
     ):
+        device = next(self.parameters()).device
         iteration = self.state_1.iteration
         pbar = tqdm(range(self.state_1.epoch, epochs), leave=False)
 
         for epoch in pbar:
             for X, _ in train_loader:
                 X = X.to(device)
-                optim_index = 0 if iteration < disc_start or iteration % 2 == 0 else 1
-                lmbda = 0 if iteration < disc_start else None
+                optim_index = (
+                    0 if iteration < self.disc_start or iteration % 2 == 0 else 1
+                )
+                lmbda = 0 if iteration < self.disc_start else None
 
                 loss, partial_losses = self.training_step_stage_1(X, optim_index, lmbda)
 
@@ -354,16 +358,17 @@ class MATS(nn.Module):
             self.state_1.iteration = iteration
             self.state_1.epoch = epoch + 1
 
-            loss_train, _ = self.evaluate_stage_1(train_loader, device)
-            loss_val, _ = self.evaluate_stage_1(val_loader, device)
-            writer.add_scalars(
-                "S1_Loss",
-                {"train": loss_train, "val": loss_val},
-                iteration,
-            )
+            if epoch % 20 == 0:
+                loss_train, _ = self.evaluate_stage_1(train_loader)
+                loss_val, _ = self.evaluate_stage_1(val_loader)
+                writer.add_scalars(
+                    "S1_Loss",
+                    {"train": loss_train, "val": loss_val},
+                    iteration,
+                )
 
-            with save_path.open("wb") as fp:
-                torch.save(self, fp)
+                with save_path.open("wb") as fp:
+                    torch.save(self, fp)
 
     def get_dim_h2(self, dim_t, dim_t2, horizon):
         return np.ceil(dim_t2 * horizon / dim_t).astype(int)
@@ -394,7 +399,8 @@ class MATS(nn.Module):
         return loss
 
     @torch.no_grad()
-    def evaluate_stage_2(self, dataloader, device="cpu"):
+    def evaluate_stage_2(self, dataloader):
+        device = next(self.parameters()).device
         criterion_predictor = nn.BCELoss()
         tot_mse, tot_loss = 0, 0
 
@@ -419,9 +425,8 @@ class MATS(nn.Module):
         n = len(dataloader)
         return tot_mse / n, tot_loss / n
 
-    def train_stage_2(
-        self, train_loader, val_loader, epochs, save_path, writer, device="cpu"
-    ):
+    def train_stage_2(self, train_loader, val_loader, epochs, save_path, writer):
+        device = next(self.parameters()).device
         iteration = self.state_2.iteration
         pbar = tqdm(range(self.state_2.epoch, epochs), leave=False)
 
@@ -433,20 +438,21 @@ class MATS(nn.Module):
                 # writer.add_scalar("S2_Loss/", loss, iteration)
                 iteration = iteration + 1
 
-            mse_train, loss_train = self.evaluate_stage_2(train_loader, device)
-            mse_val, loss_val = self.evaluate_stage_2(val_loader, device)
-            writer.add_scalars(
-                "S2_MSE", {"train": mse_train, "val": mse_val}, iteration
-            )
-            writer.add_scalars(
-                "S2_Loss", {"train": loss_train, "val": loss_val}, iteration
-            )
-
             self.state_2.iteration = iteration
             self.state_2.epoch = epoch + 1
 
-            with save_path.open("wb") as fp:
-                torch.save(self, fp)
+            if epoch % 20 == 0:
+                mse_train, loss_train = self.evaluate_stage_2(train_loader)
+                mse_val, loss_val = self.evaluate_stage_2(val_loader)
+                writer.add_scalars(
+                    "S2_MSE", {"train": mse_train, "val": mse_val}, iteration
+                )
+                writer.add_scalars(
+                    "S2_Loss", {"train": loss_train, "val": loss_val}, iteration
+                )
+
+                with save_path.open("wb") as fp:
+                    torch.save(self, fp)
 
     def freeze_stage_1(self):
         list_models = [
@@ -469,16 +475,11 @@ class MATS(nn.Module):
         epochs_2,
         save_path,
         writer,
-        device="cpu",
     ):
         self.train()
-        self.train_stage_1(
-            train_loader_1, val_loader_1, epochs_1, save_path, writer, device
-        )
+        self.train_stage_1(train_loader_1, val_loader_1, epochs_1, save_path, writer)
         self.freeze_stage_1()
-        self.train_stage_2(
-            train_loader_2, val_loader_2, epochs_2, save_path, writer, device
-        )
+        self.train_stage_2(train_loader_2, val_loader_2, epochs_2, save_path, writer)
 
     def predict(self, X, horizon):
         Chat = self.forward_stage_2(X, horizon)
@@ -487,8 +488,9 @@ class MATS(nn.Module):
         return Xpred
 
     @torch.no_grad()
-    def evaluate(self, dataloader, device="cpu"):
+    def evaluate(self, dataloader):
         self.eval()
+        device = next(self.parameters()).device
         list_mse = []
         list_mae = []
 
