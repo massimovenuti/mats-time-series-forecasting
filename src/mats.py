@@ -6,6 +6,7 @@ import numpy as np
 from torch.nn import functional as F
 from tqdm import tqdm
 from matplotlib import pyplot as plt
+import math
 
 
 # TODO : should we use ?
@@ -70,8 +71,9 @@ class Discriminator(nn.Module):
     def __init__(self, dim_in):
         super().__init__()
         self.backbone = Encoder(dim_in)
-        # self.fc = nn.Sequential(nn.Linear(in_features=64, out_features=1), nn.Sigmoid())
-        self.fc = nn.Linear(in_features=64, out_features=1)  # removed sigmoid
+        self.backbone.apply(weights_init)
+        self.fc = nn.Sequential(nn.Linear(in_features=64, out_features=1), nn.Sigmoid())
+        # self.fc = nn.Linear(in_features=64, out_features=1)  # removed sigmoid
 
     def forward(self, X):
         backbone_out = self.backbone(X)
@@ -92,27 +94,30 @@ class Predictor(nn.Module):
         )
         self.decode = nn.Sequential(nn.Linear(1024, dim_in), nn.Softmax(dim=2))
 
-    def forward(self, X, horizon):
-        # TODO : should we do teacher forcing only ?
-        # See Curriculum Learning
-        pred_output, (last_hidden, last_cell) = self.lstm(X)
-        prediction = self.decode(pred_output)  # DIM_T2 * BATCH_SIZE * DIM_M
-
+    def forward(self, X, horizon=None, teacher_prob=0, X_gt=None):
+        # Curriculum Learning
+        output, (last_hidden, last_cell) = self.lstm(X)
+        prediction = self.decode(output)  # DIM_T2 * BATCH_SIZE * DIM_M
         all_predictions = [prediction]
-
-        for _ in range(horizon):
-            pred_output, (last_hidden, last_cell) = self.lstm(
-                prediction[-1].unsqueeze(0), (last_hidden, last_cell)
-            )
-            prediction = self.decode(pred_output)
+        
+        if teacher_prob > 0 and X_gt is not None:
+            horizon = len(X_gt) - len(X)
+        else:
+            assert horizon is not None
+        
+        for i in range(len(X), len(X) + horizon):
+            if torch.rand(1) < teacher_prob:
+                # Teacher forcing
+                current_input = X_gt[i].unsqueeze(0)
+            else:
+                # Use previous prediction
+                current_input = prediction[-1].unsqueeze(0)
+            output, (last_hidden, last_cell) = self.lstm(current_input, (last_hidden, last_cell))
+            prediction = self.decode(output)
             all_predictions.append(prediction)
 
         # (DIM_T2 + DIM_H2) * BATCH_SIZE * DIM_M
         preds = torch.vstack(all_predictions)
-
-        # BATCH_SIZE * DIM_M * (DIM_T2 + DIM_H2)
-        preds = preds.movedim((0, 1, 2), (2, 0, 1))
-
         return preds
 
 
@@ -157,7 +162,7 @@ class DiscriminatorLoss(nn.Module):
         # TODO : je ne comprends pas l'intérêt des max() vu que D et Dhat sont dans [0,1]
         max_D = torch.maximum(torch.zeros_like(D), 1 - D)
         max_Dhat = torch.maximum(torch.zeros_like(Dhat), 1 + Dhat)
-        loss = torch.mean(max_D + max_Dhat)
+        loss = self.weight * torch.mean(max_D + max_Dhat)
         return loss, (max_D, max_Dhat)
 
 
@@ -373,23 +378,30 @@ class MATS(nn.Module):
     def get_dim_h2(self, dim_t, dim_t2, horizon):
         return np.ceil(dim_t2 * horizon / dim_t).astype(int)
 
-    def forward_stage_2(self, X, horizon):
+    def forward_stage_2(self, X, horizon=None, teacher_prob=0, C_gt=None):
         C, _ = self.encode(X)  # BATCH_SIZE * DIM_M * DIM_T2
-        dim_h2 = self.get_dim_h2(X.shape[1], C.shape[2], horizon)
-        # LSTM waits dim L * N * H_in
         C = C.movedim((0, 1, 2), (1, 2, 0))  # DIM_T2 * BATCH_SIZE * DIM_M
-        Chat = self.predictor(C, dim_h2)  # BATCH_SIZE * DIM_M * (DIM_T2 + DIM_H2)
+        
+        if teacher_prob > 0 and C_gt is not None:
+            C_gt = C_gt.movedim((0, 1, 2), (1, 2, 0))  # (DIM_T2+DIM_H2) * BATCH_SIZE * DIM_M
+            Chat = self.predictor(C, teacher_prob=teacher_prob, X_gt=C_gt)  # (DIM_T2 + DIM_H2) * BATCH_SIZE * DIM_M
+        else:
+            assert horizon is not None
+            dim_h2 = self.get_dim_h2(X.shape[1], C.shape[0], horizon)
+            Chat = self.predictor(C, horizon=dim_h2)  # (DIM_T2 + DIM_H2) * BATCH_SIZE * DIM_M
+
+        Chat = Chat.movedim((0, 1, 2), (2, 0, 1)) # BATCH_SIZE * DIM_M * (DIM_T2 + DIM_H2)
         return Chat
 
-    def training_step_stage_2(self, X, y):
+    def training_step_stage_2(self, X, y, teacher_prob):
         criterion_predictor = nn.BCELoss()
         self.optim_predictor.zero_grad()
-
-        Chat = self.forward_stage_2(X, y.shape[1])
 
         # (6)
         X_gt = torch.cat((X, y), dim=1)  # BATCH_SIZE * (DIM_T + DIM_H) * DIM_C
         C_gt, _ = self.encode(X_gt)  # BATCH_SIZE * DIM_M * (DIM_T2 + DIM_H2)
+        
+        Chat = self.forward_stage_2(X, teacher_prob=teacher_prob, C_gt=C_gt)
 
         # (7)
         loss = criterion_predictor(Chat, C_gt)
@@ -408,10 +420,10 @@ class MATS(nn.Module):
             X = X.to(device)
             y = y.to(device)
 
-            Chat = self.forward_stage_2(X, y.shape[1])
-
             X_gt = torch.cat((X, y), dim=1)  # BATCH_SIZE * (DIM_T + DIM_H) * DIM_C
             C_gt, _ = self.encode(X_gt)  # BATCH_SIZE * DIM_M * (DIM_T2 + DIM_H2)
+            
+            Chat = self.forward_stage_2(X, horizon=y.shape[1])
 
             loss = criterion_predictor(Chat, C_gt)
             tot_loss += loss
@@ -421,7 +433,7 @@ class MATS(nn.Module):
 
             mse = F.mse_loss(Xpred, y, reduction="sum")
             tot_mse += mse
-            n += len(y)
+            n += np.prod(X.shape)
 
         return tot_mse / n, tot_loss / n
 
@@ -429,13 +441,17 @@ class MATS(nn.Module):
         device = next(self.parameters()).device
         iteration = self.state_2.iteration
         pbar = tqdm(range(self.state_2.epoch, epochs), leave=False)
-
+        
+        k = 1
+        steps = torch.linspace(-6, 6, epochs * len(train_loader))
+        teacher_prob_schedule = k / (k + np.exp(steps / k))
+        
         for epoch in pbar:
             for X, y in train_loader:
                 X = X.to(device)
                 y = y.to(device)
-                loss = self.training_step_stage_2(X, y)
-                # writer.add_scalar("S2_Loss/", loss, iteration)
+                teacher_prob = teacher_prob_schedule[iteration]
+                loss = self.training_step_stage_2(X, y, teacher_prob=teacher_prob)
                 iteration = iteration + 1
 
             self.state_2.iteration = iteration
@@ -503,7 +519,7 @@ class MATS(nn.Module):
             mae = F.l1_loss(Xpred, y, reduction="sum")
             tot_mse += mse.item()
             tot_mae += mae.item()
-            n += len(y)
+            n += np.prod(X.shape)
 
         return tot_mse / n, tot_mae / n
 

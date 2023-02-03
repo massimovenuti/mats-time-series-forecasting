@@ -20,6 +20,7 @@ BATCH_SIZE = 64
 DIM_E = 64  # Nombre de variable d'une serie chronologique apres encodeur ( taille couche sortie encodeur)
 SIZE_M = 16  # Taille de la banque de mémoire
 
+RUNS_DIR = "runs/"
 STATES_DIR = "states/"
 RESULTS_DIR = "results/"
 DATA_DIR = "data/"
@@ -28,17 +29,17 @@ DATA_DIR = "data/"
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataset_paths = {
-        "ili": Path(DATA_DIR, "ili.csv"),
-        "exchange": Path(DATA_DIR, "exchange.txt"),
         "electricity": Path(DATA_DIR, "electricity.txt"),
+        "exchange": Path(DATA_DIR, "exchange.txt"),
         "ett": Path(DATA_DIR, "ett_h1.txt"),
         "ett": Path(DATA_DIR, "ett_h2.txt"),
         "ett": Path(DATA_DIR, "ett_m1.txt"),
         "ett": Path(DATA_DIR, "ett_m2.txt"),
         "traffic": Path(DATA_DIR, "traffic.txt"),
         "weather": Path(DATA_DIR, "weather.csv"),
+        "ili": Path(DATA_DIR, "ili.csv"),
     }
-
+    
     all_mse_train = {}
     all_mae_train = {}
     all_mse_test = {}
@@ -56,7 +57,7 @@ if __name__ == "__main__":
             dim_h = DIMS_H[i] if dataset != "ili" else DIMS_H_ILI[i]
             print(f"### H = {dim_h} ###")
 
-            writer = tb.SummaryWriter(f"runs/mats_{dataset}_h_{dim_h}_{time.asctime()}")
+            writer = tb.SummaryWriter(Path(RUNS_DIR, f"mats_{dataset}_h_{dim_h}_{time.asctime()}"))
             save_path = Path(STATES_DIR, dataset, f"mats_h_{dim_h}.pkl")
             save_path.parent.mkdir(exist_ok=True, parents=True)
 
@@ -105,7 +106,7 @@ if __name__ == "__main__":
             all_mse_test[dataset][dim_h] = mse
             all_mae_test[dataset][dim_h] = mae
 
-            Path(RESULTS_DIR).mkdir(exist_ok=True)
+            Path(RESULTS_DIR).mkdir(parents=True, exist_ok=True)
             df_mse_train = pd.DataFrame.from_dict(all_mse_train).to_csv(
                 Path(RESULTS_DIR, "mse_train.csv", index_label="H")
             )
