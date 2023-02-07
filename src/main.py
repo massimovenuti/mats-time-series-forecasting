@@ -63,7 +63,7 @@ if __name__ == "__main__":
                     with save_path_2.open("rb") as fp:
                         model = torch.load(fp)
                 elif save_path_1.is_file():
-                    with save_path.open("rb") as fp:
+                    with save_path_1.open("rb") as fp:
                         model = torch.load(fp)
                 else:
                     dim_c = train_loader_1.dataset.data.shape[1]
