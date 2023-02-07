@@ -41,6 +41,9 @@ def get_loaders(
     normalize=True,
     univariate=False,
 ):
+    if dataset in ["ett_h1", "ett_h2", "ett_m1", "ett_m2"]:
+        dataset = "ett"
+        
     datasets = ["electricity", "exchange", "ett", "ili", "traffic", "weather"]
     assert dataset in datasets
 
@@ -60,7 +63,7 @@ def get_loaders(
     df = df.select_dtypes([np.number])
 
     if univariate:
-        df = df.iloc[:, -1]
+        df = df.iloc[:, -1:]
 
     # Dataset split
     if val_size > 0:

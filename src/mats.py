@@ -489,13 +489,14 @@ class MATS(nn.Module):
         val_loader_2,
         epochs_1,
         epochs_2,
-        save_path,
+        save_path_1,
+        save_path_2,
         writer,
     ):
         self.train()
-        self.train_stage_1(train_loader_1, val_loader_1, epochs_1, save_path, writer)
+        self.train_stage_1(train_loader_1, val_loader_1, epochs_1, save_path_1, writer)
         self.freeze_stage_1()
-        self.train_stage_2(train_loader_2, val_loader_2, epochs_2, save_path, writer)
+        self.train_stage_2(train_loader_2, val_loader_2, epochs_2, save_path_2, writer)
 
     def predict(self, X, horizon):
         Chat = self.forward_stage_2(X, horizon)
