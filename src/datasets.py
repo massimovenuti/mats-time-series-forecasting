@@ -40,6 +40,7 @@ def get_loaders(
     dim_h=96,
     normalize=True,
     univariate=False,
+    shuffle=True,
 ):
     if dataset in ["ett_h1", "ett_h2", "ett_m1", "ett_m2"]:
         dataset = "ett"
@@ -76,13 +77,13 @@ def get_loaders(
     train_loader = data.DataLoader(
         TimeSeriesDataset(data_train, dim_t, dim_h),
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=shuffle,
     )
 
     test_loader = data.DataLoader(
         TimeSeriesDataset(data_test, dim_t, dim_h),
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=shuffle,
     )
 
     if val_size == 0:
@@ -91,7 +92,7 @@ def get_loaders(
     val_loader = data.DataLoader(
         TimeSeriesDataset(data_val, dim_t, dim_h),
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=shuffle,
     )
 
     return train_loader, val_loader, test_loader

@@ -363,7 +363,7 @@ class MATS(nn.Module):
             self.state_1.iteration = iteration
             self.state_1.epoch = epoch + 1
 
-            if epoch % 30 == 0:
+            if epoch % 30 == 0 or epoch + 1 == epochs:
                 loss_train, _ = self.evaluate_stage_1(train_loader)
                 loss_val, _ = self.evaluate_stage_1(val_loader)
                 writer.add_scalars(
@@ -457,7 +457,7 @@ class MATS(nn.Module):
             self.state_2.iteration = iteration
             self.state_2.epoch = epoch + 1
 
-            if epoch % 30 == 0:
+            if epoch % 30 == 0 or epoch + 1 == epochs:
                 mse_train, loss_train = self.evaluate_stage_2(train_loader)
                 mse_val, loss_val = self.evaluate_stage_2(val_loader)
                 writer.add_scalars(
@@ -498,6 +498,7 @@ class MATS(nn.Module):
         self.freeze_stage_1()
         self.train_stage_2(train_loader_2, val_loader_2, epochs_2, save_path_2, writer)
 
+    @torch.no_grad()
     def predict(self, X, horizon):
         Chat = self.forward_stage_2(X, horizon)
         Xhat = self.decode(Chat).movedim(1, 2)  # BATCH_SIZE * DIM_T * DIM_C
@@ -524,5 +525,5 @@ class MATS(nn.Module):
 
         return tot_mse / n, tot_mae / n
 
-    def forward(self, X):
-        return self.predict(X)
+    def forward(self, X, horizon):
+        return self.predict(X, horizon)
