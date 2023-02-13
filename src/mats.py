@@ -393,9 +393,8 @@ class MATS(nn.Module):
 
                 # Early stopping
                 if no_improvement_checks == patience :
-                    loss_train, _ = self.evaluate_stage_1(train_loader)
-                    loss_val, _ = self.evaluate_stage_1(val_loader)
 
+                    # Saving losses info
                     writer.add_scalars(
                         "S1_Loss",
                         {"train": loss_train, "val": loss_val},
