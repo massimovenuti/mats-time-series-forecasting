@@ -81,6 +81,8 @@ if __name__ == "__main__":
                     save_path_1=save_path_1,
                     save_path_2=save_path_2,
                     writer=writer,
+                    patience=30,
+                    check_every=5
                 )
 
                 mse, mae = model.evaluate(train_loader_2)

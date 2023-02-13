@@ -331,6 +331,8 @@ class MATS(nn.Module):
         epochs,
         save_path,
         writer,
+        patience=5,
+        check_every=10
     ):
         device = next(self.parameters()).device
         iteration = self.state_1.iteration
@@ -363,17 +365,44 @@ class MATS(nn.Module):
             self.state_1.iteration = iteration
             self.state_1.epoch = epoch + 1
 
-            if epoch % 30 == 0 or epoch + 1 == epochs:
+            # Model save - Early stopping
+            if epoch % check_every == 0 :
                 loss_train, _ = self.evaluate_stage_1(train_loader)
                 loss_val, _ = self.evaluate_stage_1(val_loader)
+
+                # Saving losses info
                 writer.add_scalars(
                     "S1_Loss",
                     {"train": loss_train, "val": loss_val},
                     iteration,
                 )
 
-                with save_path.open("wb") as fp:
-                    torch.save(self, fp)
+                # Increment patience
+                if loss_val >= best_loss_val and best_loss_val != -1:
+                    no_improvement_checks += 1
+
+                # Save new best loss val and reset patience counter
+                else :
+                    # We save the new model as it is better than the last one
+                    with save_path.open("wb") as fp:
+                        torch.save(self, fp)
+
+                    # We reset the values and save the new best loss val
+                    no_improvement_checks = 0
+                    best_loss_val = loss_val
+
+                # Early stopping
+                if no_improvement_checks == patience :
+                    loss_train, _ = self.evaluate_stage_1(train_loader)
+                    loss_val, _ = self.evaluate_stage_1(val_loader)
+
+                    writer.add_scalars(
+                        "S1_Loss",
+                        {"train": loss_train, "val": loss_val},
+                        iteration,
+                    )
+                    
+                    return
 
     def get_dim_h2(self, dim_t, dim_t2, horizon):
         return np.ceil(dim_t2 * horizon / dim_t).astype(int)
@@ -437,7 +466,15 @@ class MATS(nn.Module):
 
         return tot_mse / n, tot_loss / n
 
-    def train_stage_2(self, train_loader, val_loader, epochs, save_path, writer):
+    def train_stage_2(self,
+        train_loader,
+        val_loader,
+        epochs,
+        save_path,
+        writer,
+        patience=5,
+        check_every=10
+    ):
         device = next(self.parameters()).device
         iteration = self.state_2.iteration
         pbar = tqdm(range(self.state_2.epoch, epochs), leave=False)
@@ -457,9 +494,12 @@ class MATS(nn.Module):
             self.state_2.iteration = iteration
             self.state_2.epoch = epoch + 1
 
-            if epoch % 30 == 0 or epoch + 1 == epochs:
+            # Model save - Early stopping
+            if epoch % check_every == 0 :
                 mse_train, loss_train = self.evaluate_stage_2(train_loader)
                 mse_val, loss_val = self.evaluate_stage_2(val_loader)
+
+                # Saving losses - results info
                 writer.add_scalars(
                     "S2_MSE", {"train": mse_train, "val": mse_val}, iteration
                 )
@@ -467,8 +507,25 @@ class MATS(nn.Module):
                     "S2_Loss", {"train": loss_train, "val": loss_val}, iteration
                 )
 
-                with save_path.open("wb") as fp:
-                    torch.save(self, fp)
+                # Increment patience
+                if loss_val >= best_loss_val and best_loss_val != -1 :
+                    no_improvement_checks += 1
+
+                # Save new best loss val and reset patience counter
+                else :
+                    # We save the new model as it is better than the last one
+                    with save_path.open("wb") as fp:
+                        torch.save(self, fp)
+
+                    # We reset the values and save the new best loss val
+                    no_improvement_checks = 0
+                    best_loss_val = loss_val
+
+                # Early stopping
+                if no_improvement_checks == patience :
+                    print("Early stopping - Stage 2 (epoch : {epoch})")
+                    
+                    return
 
     def freeze_stage_1(self):
         list_models = [
@@ -492,11 +549,15 @@ class MATS(nn.Module):
         save_path_1,
         save_path_2,
         writer,
+        patience=5,
+        check_every=10
     ):
         self.train()
-        self.train_stage_1(train_loader_1, val_loader_1, epochs_1, save_path_1, writer)
+        self.train_stage_1(train_loader_1, val_loader_1, epochs_1, save_path_1, writer, 
+                            patience=patience, check_every=check_every)
         self.freeze_stage_1()
-        self.train_stage_2(train_loader_2, val_loader_2, epochs_2, save_path_2, writer)
+        self.train_stage_2(train_loader_2, val_loader_2, epochs_2, save_path_2, writer,
+                           patience=patience, check_every=check_every)
 
     @torch.no_grad()
     def predict(self, X, horizon):
