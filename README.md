@@ -4,3 +4,6 @@ A new model, Memory Attention for Time-Series forecasting (MATS), addresses the 
 
 Link of the paper : [link](https://openreview.net/pdf?id=JjEtPDn0eRb)
 
+## Poster
+
+![Poster](./assets/poster_mats.png)
